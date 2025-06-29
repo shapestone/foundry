@@ -1,0 +1,33 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+
+	"github.com/gorilla/mux"
+)
+
+func main() {
+	r := mux.NewRouter()
+	
+	// Health check endpoint
+	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "healthy",
+			"service": "{{ .ProjectName }}",
+		})
+	})
+	
+	// Example API endpoint
+	r.HandleFunc("/api/hello", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": "Hello from {{ .ProjectName }}!",
+		})
+	})
+	
+	port := ":8080"
+	fmt.Printf("🚀 {{ .ProjectName }} starting on port %s\n", port)
+	log.Fatal(http.ListenAndServe(port, r))
+}
