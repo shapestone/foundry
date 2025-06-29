@@ -1,0 +1,63 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+)
+
+func main() {
+	r := chi.NewRouter()
+
+	// Middleware stack
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.Timeout(60 * time.Second))
+
+	// Routes
+	r.Get("/", handleHome)
+	r.Get("/health", handleHealth)
+
+	// API routes
+	r.Route("/api/v1", func(r chi.Router) {
+		// Add your API routes here
+		// Example: r.Get("/users", handleGetUsers)
+	})
+
+	port := "8080"
+	fmt.Printf("🚀 testapp is running on port %s\n", port)
+	fmt.Println("🌐 http://localhost:" + port)
+	
+	if err := http.ListenAndServe(":"+port, r); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
+}
+
+func handleHome(w http.ResponseWriter, r *http.Request) {
+	response := map[string]string{
+		"message": "Welcome to testapp",
+		"version": "1.0.0",
+		"docs":    "/health",
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	response := map[string]interface{}{
+		"status":    "healthy",
+		"service":   "testapp",
+		"timestamp": time.Now().Unix(),
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}

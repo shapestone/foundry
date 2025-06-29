@@ -1,0 +1,51 @@
+# {{ .ProjectName }}
+
+A REST API built with [Foundry](https://github.com/yourusername/foundry).
+
+## Quick Start
+
+` + "`" + `bash
+# Install dependencies
+go mod tidy
+
+# Run the service
+go run .
+
+# Or build and run
+go build -o {{ .ProjectName }}
+./{{ .ProjectName }}
+` + "`" + `
+
+## API Endpoints
+
+- ` + "`" + `GET /` + "`" + ` - Welcome message
+- ` + "`" + `GET /health` + "`" + ` - Health check
+
+## Development
+
+` + "`" + `bash
+# Run with hot reload (install air first)
+air
+
+# Run tests
+go test ./...
+
+# Build for production
+go build -o {{ .ProjectName }} .
+` + "`" + `
+
+## Project Structure
+
+` + "`" + `
+{{ .ProjectName }}/
+├── main.go              # Application entry point
+├── go.mod              # Go module file
+├── internal/           # Private application code
+│   ├── handlers/       # HTTP handlers
+│   └── middleware/     # HTTP middleware
+└── README.md           # This file
+` + "`" + `
+
+## License
+
+MIT
