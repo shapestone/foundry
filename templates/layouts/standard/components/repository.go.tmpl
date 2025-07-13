@@ -1,0 +1,270 @@
+package repository
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+
+	"{{.ModuleName}}/internal/models"
+	"{{.ModuleName}}/pkg/errors"
+)
+
+// {{.ComponentName | title}}Repository defines the interface for {{.ComponentName | snake_case}} data access
+type {{.ComponentName | title}}Repository interface {
+	FindByID(ctx context.Context, id int64) (*models.{{.ComponentName | title}}, error)
+	FindByFilter(ctx context.Context, filter *models.{{.ComponentName | title}}Filter) ([]*models.{{.ComponentName | title}}, error)
+	CountByFilter(ctx context.Context, filter *models.{{.ComponentName | title}}Filter) (int64, error)
+	Create(ctx context.Context, {{.ComponentName | snake_case}} *models.{{.ComponentName | title}}) (*models.{{.ComponentName | title}}, error)
+	Update(ctx context.Context, {{.ComponentName | snake_case}} *models.{{.ComponentName | title}}) (*models.{{.ComponentName | title}}, error)
+	Delete(ctx context.Context, id int64) error
+	Exists(ctx context.Context, id int64) (bool, error)
+}
+
+// {{.ComponentName | snake_case}}Repository implements {{.ComponentName | title}}Repository interface
+type {{.ComponentName | snake_case}}Repository struct {
+	db *sql.DB
+}
+
+// New{{.ComponentName | title}}Repository creates a new {{.ComponentName | snake_case}} repository
+func New{{.ComponentName | title}}Repository(db *sql.DB) {{.ComponentName | title}}Repository {
+	return &{{.ComponentName | snake_case}}Repository{
+		db: db,
+	}
+}
+
+const (
+	{{.ComponentName | snake_case}}TableName = "{{.ComponentName | snake_case | plural}}"
+	{{.ComponentName | snake_case}}BaseQuery = `
+		SELECT id, created_at, updated_at
+		FROM ` + {{.ComponentName | snake_case}}TableName + `
+	`
+)
+
+// FindByID retrieves a {{.ComponentName | snake_case}} by ID
+func (r *{{.ComponentName | snake_case}}Repository) FindByID(ctx context.Context, id int64) (*models.{{.ComponentName | title}}, error) {
+	query := {{.ComponentName | snake_case}}BaseQuery + ` WHERE id = $1`
+
+	row := r.db.QueryRowContext(ctx, query, id)
+
+	{{.ComponentName | snake_case}} := &models.{{.ComponentName | title}}{}
+	err := row.Scan(
+		&{{.ComponentName | snake_case}}.ID,
+		&{{.ComponentName | snake_case}}.CreatedAt,
+		&{{.ComponentName | snake_case}}.UpdatedAt,
+		// Add your additional fields here
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.NewNotFoundError("{{.ComponentName | snake_case}} not found")
+		}
+		return nil, errors.Wrap(err, "failed to scan {{.ComponentName | snake_case}}")
+	}
+
+	return {{.ComponentName | snake_case}}, nil
+}
+
+// FindByFilter retrieves {{.ComponentName | snake_case | plural}} by filter criteria
+func (r *{{.ComponentName | snake_case}}Repository) FindByFilter(ctx context.Context, filter *models.{{.ComponentName | title}}Filter) ([]*models.{{.ComponentName | title}}, error) {
+	query, args := r.buildSelectQuery(filter)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to query {{.ComponentName | snake_case | plural}}")
+	}
+	defer rows.Close()
+
+	var {{.ComponentName | snake_case | plural}} []*models.{{.ComponentName | title}}
+
+	for rows.Next() {
+		{{.ComponentName | snake_case}} := &models.{{.ComponentName | title}}{}
+		err := rows.Scan(
+			&{{.ComponentName | snake_case}}.ID,
+			&{{.ComponentName | snake_case}}.CreatedAt,
+			&{{.ComponentName | snake_case}}.UpdatedAt,
+			// Add your additional fields here
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to scan {{.ComponentName | snake_case}}")
+		}
+		{{.ComponentName | snake_case | plural}} = append({{.ComponentName | snake_case | plural}}, {{.ComponentName | snake_case}})
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "error iterating {{.ComponentName | snake_case}} rows")
+	}
+
+	return {{.ComponentName | snake_case | plural}}, nil
+}
+
+// CountByFilter counts {{.ComponentName | snake_case | plural}} by filter criteria
+func (r *{{.ComponentName | snake_case}}Repository) CountByFilter(ctx context.Context, filter *models.{{.ComponentName | title}}Filter) (int64, error) {
+	query, args := r.buildCountQuery(filter)
+
+	row := r.db.QueryRowContext(ctx, query, args...)
+
+	var count int64
+	err := row.Scan(&count)
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to count {{.ComponentName | snake_case | plural}}")
+	}
+
+	return count, nil
+}
+
+// Create creates a new {{.ComponentName | snake_case}}
+func (r *{{.ComponentName | snake_case}}Repository) Create(ctx context.Context, {{.ComponentName | snake_case}} *models.{{.ComponentName | title}}) (*models.{{.ComponentName | title}}, error) {
+	query := `
+		INSERT INTO ` + {{.ComponentName | snake_case}}TableName + ` (created_at, updated_at)
+		VALUES ($1, $2)
+		RETURNING id, created_at, updated_at
+	`
+
+	row := r.db.QueryRowContext(ctx, query,
+		{{.ComponentName | snake_case}}.CreatedAt,
+		{{.ComponentName | snake_case}}.UpdatedAt,
+		// Add your additional fields here
+	)
+
+	created{{.ComponentName | title}} := &models.{{.ComponentName | title}}{}
+	err := row.Scan(
+		&created{{.ComponentName | title}}.ID,
+		&created{{.ComponentName | title}}.CreatedAt,
+		&created{{.ComponentName | title}}.UpdatedAt,
+		// Add your additional fields here
+	)
+
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create {{.ComponentName | snake_case}}")
+	}
+
+	return created{{.ComponentName | title}}, nil
+}
+
+// Update updates an existing {{.ComponentName | snake_case}}
+func (r *{{.ComponentName | snake_case}}Repository) Update(ctx context.Context, {{.ComponentName | snake_case}} *models.{{.ComponentName | title}}) (*models.{{.ComponentName | title}}, error) {
+	query := `
+		UPDATE ` + {{.ComponentName | snake_case}}TableName + `
+		SET updated_at = $1
+		WHERE id = $2
+		RETURNING id, created_at, updated_at
+	`
+
+	row := r.db.QueryRowContext(ctx, query,
+		{{.ComponentName | snake_case}}.UpdatedAt,
+		{{.ComponentName | snake_case}}.ID,
+		// Add your additional fields here
+	)
+
+	updated{{.ComponentName | title}} := &models.{{.ComponentName | title}}{}
+	err := row.Scan(
+		&updated{{.ComponentName | title}}.ID,
+		&updated{{.ComponentName | title}}.CreatedAt,
+		&updated{{.ComponentName | title}}.UpdatedAt,
+		// Add your additional fields here
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.NewNotFoundError("{{.ComponentName | snake_case}} not found")
+		}
+		return nil, errors.Wrap(err, "failed to update {{.ComponentName | snake_case}}")
+	}
+
+	return updated{{.ComponentName | title}}, nil
+}
+
+// Delete deletes a {{.ComponentName | snake_case}} by ID
+func (r *{{.ComponentName | snake_case}}Repository) Delete(ctx context.Context, id int64) error {
+	query := `DELETE FROM ` + {{.ComponentName | snake_case}}TableName + ` WHERE id = $1`
+
+	result, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return errors.Wrap(err, "failed to delete {{.ComponentName | snake_case}}")
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return errors.Wrap(err, "failed to get rows affected")
+	}
+
+	if rowsAffected == 0 {
+		return errors.NewNotFoundError("{{.ComponentName | snake_case}} not found")
+	}
+
+	return nil
+}
+
+// Exists checks if a {{.ComponentName | snake_case}} exists by ID
+func (r *{{.ComponentName | snake_case}}Repository) Exists(ctx context.Context, id int64) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM ` + {{.ComponentName | snake_case}}TableName + ` WHERE id = $1)`
+
+	row := r.db.QueryRowContext(ctx, query, id)
+
+	var exists bool
+	err := row.Scan(&exists)
+	if err != nil {
+		return false, errors.Wrap(err, "failed to check {{.ComponentName | snake_case}} existence")
+	}
+
+	return exists, nil
+}
+
+// buildSelectQuery builds the SELECT query with filters
+func (r *{{.ComponentName | snake_case}}Repository) buildSelectQuery(filter *models.{{.ComponentName | title}}Filter) (string, []interface{}) {
+	query := {{.ComponentName | snake_case}}BaseQuery
+	var conditions []string
+	var args []interface{}
+	argCount := 0
+
+	// Add WHERE conditions based on filter
+	// Example:
+	// if filter.Name != nil {
+	//     argCount++
+	//     conditions = append(conditions, fmt.Sprintf("name ILIKE $%d", argCount))
+	//     args = append(args, "%"+*filter.Name+"%")
+	// }
+
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	// Add ORDER BY
+	if filter.SortBy != "" {
+		query += fmt.Sprintf(" ORDER BY %s %s", filter.SortBy, strings.ToUpper(filter.SortOrder))
+	}
+
+	// Add LIMIT and OFFSET
+	argCount++
+	query += fmt.Sprintf(" LIMIT $%d", argCount)
+	args = append(args, filter.Limit)
+
+	argCount++
+	query += fmt.Sprintf(" OFFSET $%d", argCount)
+	args = append(args, filter.Offset())
+
+	return query, args
+}
+
+// buildCountQuery builds the COUNT query with filters
+func (r *{{.ComponentName | snake_case}}Repository) buildCountQuery(filter *models.{{.ComponentName | title}}Filter) (string, []interface{}) {
+	query := `SELECT COUNT(*) FROM ` + {{.ComponentName | snake_case}}TableName
+	var conditions []string
+	var args []interface{}
+	argCount := 0
+
+	// Add WHERE conditions based on filter (same as buildSelectQuery)
+	// Example:
+	// if filter.Name != nil {
+	//     argCount++
+	//     conditions = append(conditions, fmt.Sprintf("name ILIKE $%d", argCount))
+	//     args = append(args, "%"+*filter.Name+"%")
+	// }
+
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	return query, args
+}

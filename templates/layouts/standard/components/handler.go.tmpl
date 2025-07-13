@@ -1,0 +1,174 @@
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+
+	"github.com/gorilla/mux"
+	"{{.ModuleName}}/internal/models"
+	"{{.ModuleName}}/internal/services"
+	"{{.ModuleName}}/pkg/errors"
+)
+
+// {{.ComponentName | title}}Handler handles HTTP requests for {{.ComponentName | snake_case}} operations
+type {{.ComponentName | title}}Handler struct {
+	service services.{{.ComponentName | title}}Service
+}
+
+// New{{.ComponentName | title}}Handler creates a new {{.ComponentName | snake_case}} handler
+func New{{.ComponentName | title}}Handler(service services.{{.ComponentName | title}}Service) *{{.ComponentName | title}}Handler {
+	return &{{.ComponentName | title}}Handler{
+		service: service,
+	}
+}
+
+// RegisterRoutes registers all {{.ComponentName | snake_case}} routes
+func (h *{{.ComponentName | title}}Handler) RegisterRoutes(router *mux.Router) {
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}", h.List).Methods("GET")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}", h.Create).Methods("POST")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/{id}", h.GetByID).Methods("GET")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/{id}", h.Update).Methods("PUT")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/{id}", h.Delete).Methods("DELETE")
+}
+
+// List handles GET /{{.ComponentName | snake_case | plural}}
+func (h *{{.ComponentName | title}}Handler) List(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Parse query parameters
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page <= 0 {
+		page = 1
+	}
+
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	{{.ComponentName | snake_case | plural}}, total, err := h.service.List(ctx, page, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"data":  {{.ComponentName | snake_case | plural}},
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// Create handles POST /{{.ComponentName | snake_case | plural}}
+func (h *{{.ComponentName | title}}Handler) Create(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req models.Create{{.ComponentName | title}}Request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	{{.ComponentName | snake_case}}, err := h.service.Create(ctx, &req)
+	if err != nil {
+		if errors.IsValidationError(err) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode({{.ComponentName | snake_case}})
+}
+
+// GetByID handles GET /{{.ComponentName | snake_case | plural}}/{id}
+func (h *{{.ComponentName | title}}Handler) GetByID(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+
+	id, err := strconv.ParseInt(vars["id"], 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		return
+	}
+
+	{{.ComponentName | snake_case}}, err := h.service.GetByID(ctx, id)
+	if err != nil {
+		if errors.IsNotFoundError(err) {
+			http.Error(w, "{{.ComponentName | title}} not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode({{.ComponentName | snake_case}})
+}
+
+// Update handles PUT /{{.ComponentName | snake_case | plural}}/{id}
+func (h *{{.ComponentName | title}}Handler) Update(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+
+	id, err := strconv.ParseInt(vars["id"], 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		return
+	}
+
+	var req models.Update{{.ComponentName | title}}Request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	{{.ComponentName | snake_case}}, err := h.service.Update(ctx, id, &req)
+	if err != nil {
+		if errors.IsNotFoundError(err) {
+			http.Error(w, "{{.ComponentName | title}} not found", http.StatusNotFound)
+			return
+		}
+		if errors.IsValidationError(err) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode({{.ComponentName | snake_case}})
+}
+
+// Delete handles DELETE /{{.ComponentName | snake_case | plural}}/{id}
+func (h *{{.ComponentName | title}}Handler) Delete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+
+	id, err := strconv.ParseInt(vars["id"], 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		return
+	}
+
+	err = h.service.Delete(ctx, id)
+	if err != nil {
+		if errors.IsNotFoundError(err) {
+			http.Error(w, "{{.ComponentName | title}} not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

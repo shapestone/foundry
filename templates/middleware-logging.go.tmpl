@@ -1,0 +1,91 @@
+package middleware
+
+import (
+	"log"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+)
+
+// LoggingMiddleware logs HTTP requests with detailed information
+func LoggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		// Wrap response writer to capture status code and bytes written
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+
+		// Process request
+		next.ServeHTTP(ww, r)
+
+		// Log request details
+		duration := time.Since(start)
+
+		log.Printf(
+			"[%s] %s %s %d %dB %s",
+			r.Method,
+			r.RequestURI,
+			r.RemoteAddr,
+			ww.Status(),
+			ww.BytesWritten(),
+			duration,
+		)
+	})
+}
+
+// StructuredLoggingMiddleware logs HTTP requests in JSON format
+func StructuredLoggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		// Wrap response writer to capture status code and bytes written
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+
+		// Extract request ID if available
+		reqID := middleware.GetReqID(r.Context())
+
+		// Process request
+		next.ServeHTTP(ww, r)
+
+		// Log in JSON format for structured logging systems
+		log.Printf(`{"time":"%s","method":"%s","uri":"%s","status":%d,"bytes":%d,"duration":"%s","request_id":"%s","remote_addr":"%s","user_agent":"%s"}`,
+			time.Now().Format(time.RFC3339),
+			r.Method,
+			r.RequestURI,
+			ww.Status(),
+			ww.BytesWritten(),
+			time.Since(start),
+			reqID,
+			r.RemoteAddr,
+			r.UserAgent(),
+		)
+	})
+}
+
+// CustomLogger allows configuration of what to log
+type CustomLogger struct {
+	SkipPaths []string // Paths to skip logging (e.g., /health, /metrics)
+}
+
+// NewCustomLogger creates a configurable logging middleware
+func NewCustomLogger(skipPaths ...string) func(next http.Handler) http.Handler {
+	logger := &CustomLogger{
+		SkipPaths: skipPaths,
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip logging for certain paths
+			for _, path := range logger.SkipPaths {
+				if r.URL.Path == path {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			// Use the standard logging middleware
+			LoggingMiddleware(next).ServeHTTP(w, r)
+		})
+	}
+}

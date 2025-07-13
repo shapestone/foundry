@@ -1,0 +1,159 @@
+package database
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// DB wraps the PostgreSQL connection pool
+type DB struct {
+	*pgxpool.Pool
+}
+
+// NewConnection creates a new PostgreSQL connection pool
+func NewConnection() (*DB, error) {
+	cfg := LoadConfig()
+
+	// Build connection string
+	connStr := fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		cfg.User,
+		cfg.Password,
+		cfg.Host,
+		cfg.Port,
+		cfg.Name,
+		cfg.SSLMode,
+	)
+
+	// Configure connection pool
+	config, err := pgxpool.ParseConfig(connStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	// Set pool configuration
+	config.MaxConns = cfg.MaxConnections
+	config.MinConns = cfg.MinConnections
+	config.MaxConnLifetime = cfg.MaxConnLifetime
+	config.MaxConnIdleTime = cfg.MaxConnIdleTime
+
+	// Set connection timeout
+	config.ConnConfig.ConnectTimeout = cfg.ConnectTimeout
+
+	// Create connection pool
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create connection pool: %w", err)
+	}
+
+	// Test the connection
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	return &DB{Pool: pool}, nil
+}
+
+// Close closes the database connection pool
+func (db *DB) Close() {
+	db.Pool.Close()
+}
+
+// Health checks the database connection
+func (db *DB) Health(ctx context.Context) error {
+	return db.Ping(ctx)
+}
+
+// Transaction executes a function within a database transaction
+func (db *DB) Transaction(ctx context.Context, fn func(pgx.Tx) error) error {
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			// Rollback on panic
+			tx.Rollback(ctx)
+			panic(p)
+		}
+	}()
+
+	if err := fn(tx); err != nil {
+		if rbErr := tx.Rollback(ctx); rbErr != nil {
+			return fmt.Errorf("transaction failed: %v, rollback failed: %w", err, rbErr)
+		}
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// QueryRow is a convenience wrapper that adds query logging
+func (db *DB) QueryRow(ctx context.Context, query string, args ...interface{}) pgx.Row {
+	start := time.Now()
+	row := db.Pool.QueryRow(ctx, query, args...)
+
+	if os.Getenv("DB_DEBUG") == "true" {
+		fmt.Printf("[DB] Query (%v): %s\n", time.Since(start), query)
+	}
+
+	return row
+}
+
+// Query is a convenience wrapper that adds query logging
+func (db *DB) Query(ctx context.Context, query string, args ...interface{}) (pgx.Rows, error) {
+	start := time.Now()
+	rows, err := db.Pool.Query(ctx, query, args...)
+
+	if os.Getenv("DB_DEBUG") == "true" {
+		fmt.Printf("[DB] Query (%v): %s\n", time.Since(start), query)
+	}
+
+	return rows, err
+}
+
+// Exec is a convenience wrapper that adds query logging
+func (db *DB) Exec(ctx context.Context, query string, args ...interface{}) (pgx.CommandTag, error) {
+	start := time.Now()
+	tag, err := db.Pool.Exec(ctx, query, args...)
+
+	if os.Getenv("DB_DEBUG") == "true" {
+		fmt.Printf("[DB] Exec (%v): %s\n", time.Since(start), query)
+	}
+
+	return tag, err
+}
+
+// Migrate runs database migrations (basic implementation)
+func (db *DB) Migrate(ctx context.Context) error {
+	// Create migrations table if not exists
+	_, err := db.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version INTEGER PRIMARY KEY,
+			applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create migrations table: %w", err)
+	}
+
+	// TODO: Implement migration logic
+	// This is a placeholder for migration functionality
+	// Consider using a migration library like golang-migrate/migrate
+
+	return nil
+}

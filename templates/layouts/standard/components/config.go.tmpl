@@ -1,0 +1,349 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"{{.ModuleName}}/pkg/errors"
+)
+
+// {{.ComponentName | title}}Config holds configuration for {{.ComponentName | snake_case}} component
+type {{.ComponentName | title}}Config struct {
+	// Basic settings
+	Enabled bool   `json:"enabled" yaml:"enabled"`
+	Name    string `json:"name" yaml:"name"`
+	Version string `json:"version" yaml:"version"`
+
+	// Connection settings
+	Host string `json:"host" yaml:"host"`
+	Port int    `json:"port" yaml:"port"`
+
+	// Timeout settings
+	ReadTimeout    time.Duration `json:"read_timeout" yaml:"read_timeout"`
+	WriteTimeout   time.Duration `json:"write_timeout" yaml:"write_timeout"`
+	RequestTimeout time.Duration `json:"request_timeout" yaml:"request_timeout"`
+
+	// Security settings
+	TLSEnabled bool   `json:"tls_enabled" yaml:"tls_enabled"`
+	CertFile   string `json:"cert_file" yaml:"cert_file"`
+	KeyFile    string `json:"key_file" yaml:"key_file"`
+
+	// Performance settings
+	MaxConnections    int `json:"max_connections" yaml:"max_connections"`
+	MaxIdleConnections int `json:"max_idle_connections" yaml:"max_idle_connections"`
+
+	// Retry settings
+	MaxRetries    int           `json:"max_retries" yaml:"max_retries"`
+	RetryInterval time.Duration `json:"retry_interval" yaml:"retry_interval"`
+
+	// Feature flags
+	Features map[string]bool `json:"features" yaml:"features"`
+
+	// Custom settings (add your specific configuration here)
+	// Example:
+	// CacheSize     int           `json:"cache_size" yaml:"cache_size"`
+	// CacheTTL      time.Duration `json:"cache_ttl" yaml:"cache_ttl"`
+	// LogLevel      string        `json:"log_level" yaml:"log_level"`
+	// MetricsEnabled bool         `json:"metrics_enabled" yaml:"metrics_enabled"`
+}
+
+// Default{{.ComponentName | title}}Config returns a configuration with default values
+func Default{{.ComponentName | title}}Config() *{{.ComponentName | title}}Config {
+	return &{{.ComponentName | title}}Config{
+		Enabled: true,
+		Name:    "{{.ComponentName | snake_case}}",
+		Version: "1.0.0",
+		Host:    "localhost",
+		Port:    8080,
+
+		ReadTimeout:    30 * time.Second,
+		WriteTimeout:   30 * time.Second,
+		RequestTimeout: 60 * time.Second,
+
+		TLSEnabled: false,
+		CertFile:   "",
+		KeyFile:    "",
+
+		MaxConnections:     100,
+		MaxIdleConnections: 10,
+
+		MaxRetries:    3,
+		RetryInterval: 1 * time.Second,
+
+		Features: make(map[string]bool),
+	}
+}
+
+// Load{{.ComponentName | title}}ConfigFromEnv loads configuration from environment variables
+func Load{{.ComponentName | title}}ConfigFromEnv(prefix string) (*{{.ComponentName | title}}Config, error) {
+	config := Default{{.ComponentName | title}}Config()
+
+	if prefix != "" && !strings.HasSuffix(prefix, "_") {
+		prefix += "_"
+	}
+
+	// Basic settings
+	if val := os.Getenv(prefix + "ENABLED"); val != "" {
+		enabled, err := strconv.ParseBool(val)
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid ENABLED value")
+		}
+		config.Enabled = enabled
+	}
+
+	if val := os.Getenv(prefix + "NAME"); val != "" {
+		config.Name = val
+	}
+
+	if val := os.Getenv(prefix + "VERSION"); val != "" {
+		config.Version = val
+	}
+
+	// Connection settings
+	if val := os.Getenv(prefix + "HOST"); val != "" {
+		config.Host = val
+	}
+
+	if val := os.Getenv(prefix + "PORT"); val != "" {
+		port, err := strconv.Atoi(val)
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid PORT value")
+		}
+		config.Port = port
+	}
+
+	// Timeout settings
+	if val := os.Getenv(prefix + "READ_TIMEOUT"); val != "" {
+		timeout, err := time.ParseDuration(val)
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid READ timeout")
+		}
+		config.ReadTimeout = timeout
+	}
+
+	if val := os.Getenv(prefix + "WRITE_TIMEOUT"); val != "" {
+		timeout, err := time.ParseDuration(val)
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid write timeout")
+		}
+		config.WriteTimeout = timeout
+	}
+
+	if val := os.Getenv(prefix + "REQUEST_TIMEOUT"); val != "" {
+		timeout, err := time.ParseDuration(val)
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid request timeout")
+		}
+		config.RequestTimeout = timeout
+	}
+
+	// Security settings
+	if val := os.Getenv(prefix + "TLS_ENABLED"); val != "" {
+		enabled, err := strconv.ParseBool(val)
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid TLS_ENABLED value")
+		}
+		config.TLSEnabled = enabled
+	}
+
+	if val := os.Getenv(prefix + "CERT_FILE"); val != "" {
+		config.CertFile = val
+	}
+
+	if val := os.Getenv(prefix + "KEY_FILE"); val != "" {
+		config.KeyFile = val
+	}
+
+	// Performance settings
+	if val := os.Getenv(prefix + "MAX_CONNECTIONS"); val != "" {
+		maxConn, err := strconv.Atoi(val)
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid MAX_CONNECTIONS value")
+		}
+		config.MaxConnections = maxConn
+	}
+
+	if val := os.Getenv(prefix + "MAX_IDLE_CONNECTIONS"); val != "" {
+		maxIdleConn, err := strconv.Atoi(val)
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid MAX_IDLE_CONNECTIONS value")
+		}
+		config.MaxIdleConnections = maxIdleConn
+	}
+
+	// Retry settings
+	if val := os.Getenv(prefix + "MAX_RETRIES"); val != "" {
+		maxRetries, err := strconv.Atoi(val)
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid MAX_RETRIES value")
+		}
+		config.MaxRetries = maxRetries
+	}
+
+	if val := os.Getenv(prefix + "RETRY_INTERVAL"); val != "" {
+		interval, err := time.ParseDuration(val)
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid RETRY_INTERVAL value")
+		}
+		config.RetryInterval = interval
+	}
+
+	// Load feature flags
+	config.loadFeatureFlags(prefix + "FEATURE_")
+
+	return config, nil
+}
+
+// Validate validates the configuration
+func (c *{{.ComponentName | title}}Config) Validate() error {
+	if !c.Enabled {
+		return nil // Skip validation if disabled
+	}
+
+	if c.Name == "" {
+		return errors.NewValidationError("name is required")
+	}
+
+	if c.Host == "" {
+		return errors.NewValidationError("host is required")
+	}
+
+	if c.Port <= 0 || c.Port > 65535 {
+		return errors.NewValidationError("port must be between 1 and 65535")
+	}
+
+	if c.ReadTimeout <= 0 {
+		return errors.NewValidationError("read timeout must be positive")
+	}
+
+	if c.WriteTimeout <= 0 {
+		return errors.NewValidationError("write timeout must be positive")
+	}
+
+	if c.RequestTimeout <= 0 {
+		return errors.NewValidationError("request timeout must be positive")
+	}
+
+	if c.MaxConnections <= 0 {
+		return errors.NewValidationError("max connections must be positive")
+	}
+
+	if c.MaxIdleConnections < 0 {
+		return errors.NewValidationError("max idle connections must be non-negative")
+	}
+
+	if c.MaxIdleConnections > c.MaxConnections {
+		return errors.NewValidationError("max idle connections cannot exceed max connections")
+	}
+
+	if c.MaxRetries < 0 {
+		return errors.NewValidationError("max retries must be non-negative")
+	}
+
+	if c.RetryInterval <= 0 {
+		return errors.NewValidationError("retry interval must be positive")
+	}
+
+	// TLS validation
+	if c.TLSEnabled {
+		if c.CertFile == "" {
+			return errors.NewValidationError("cert file is required when TLS is enabled")
+		}
+		if c.KeyFile == "" {
+			return errors.NewValidationError("key file is required when TLS is enabled")
+		}
+	}
+
+	return nil
+}
+
+// Address returns the formatted address string
+func (c *{{.ComponentName | title}}Config) Address() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+
+// IsFeatureEnabled checks if a feature flag is enabled
+func (c *{{.ComponentName | title}}Config) IsFeatureEnabled(feature string) bool {
+	enabled, exists := c.Features[feature]
+	return exists && enabled
+}
+
+// SetFeature sets a feature flag
+func (c *{{.ComponentName | title}}Config) SetFeature(feature string, enabled bool) {
+	if c.Features == nil {
+		c.Features = make(map[string]bool)
+	}
+	c.Features[feature] = enabled
+}
+
+// Clone creates a deep copy of the configuration
+func (c *{{.ComponentName | title}}Config) Clone() *{{.ComponentName | title}}Config {
+	clone := *c
+
+	// Deep copy the features map
+	if c.Features != nil {
+		clone.Features = make(map[string]bool)
+		for k, v := range c.Features {
+			clone.Features[k] = v
+		}
+	}
+
+	return &clone
+}
+
+// String returns a string representation of the configuration
+func (c *{{.ComponentName | title}}Config) String() string {
+	return fmt.Sprintf("{{.ComponentName | title}}Config{Name:%s, Address:%s, Enabled:%t, TLS:%t}",
+		c.Name, c.Address(), c.Enabled, c.TLSEnabled)
+}
+
+// loadFeatureFlags loads feature flags from environment variables
+func (c *{{.ComponentName | title}}Config) loadFeatureFlags(prefix string) {
+	if c.Features == nil {
+		c.Features = make(map[string]bool)
+	}
+
+	for _, env := range os.Environ() {
+		if strings.HasPrefix(env, prefix) {
+			parts := strings.SplitN(env, "=", 2)
+			if len(parts) == 2 {
+				feature := strings.TrimPrefix(parts[0], prefix)
+				feature = strings.ToLower(feature)
+
+				if enabled, err := strconv.ParseBool(parts[1]); err == nil {
+					c.Features[feature] = enabled
+				}
+			}
+		}
+	}
+}
+
+// Merge merges another configuration into this one
+func (c *{{.ComponentName | title}}Config) Merge(other *{{.ComponentName | title}}Config) {
+	if other == nil {
+		return
+	}
+
+	if other.Name != "" {
+		c.Name = other.Name
+	}
+	if other.Host != "" {
+		c.Host = other.Host
+	}
+	if other.Port != 0 {
+		c.Port = other.Port
+	}
+
+	// Merge feature flags
+	if other.Features != nil {
+		if c.Features == nil {
+			c.Features = make(map[string]bool)
+		}
+		for k, v := range other.Features {
+			c.Features[k] = v
+		}
+	}
+}

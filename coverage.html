@@ -1,0 +1,2819 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>cmd: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/shapestone/foundry/cmd/foundry/cmd/add.go (23.9%)</option>
+				
+				<option value="file1">github.com/shapestone/foundry/cmd/foundry/cmd/database.go (1.8%)</option>
+				
+				<option value="file2">github.com/shapestone/foundry/cmd/foundry/cmd/handler.go (4.3%)</option>
+				
+				<option value="file3">github.com/shapestone/foundry/cmd/foundry/cmd/middleware.go (2.0%)</option>
+				
+				<option value="file4">github.com/shapestone/foundry/cmd/foundry/cmd/model.go (0.0%)</option>
+				
+				<option value="file5">github.com/shapestone/foundry/cmd/foundry/cmd/new.go (0.0%)</option>
+				
+				<option value="file6">github.com/shapestone/foundry/cmd/foundry/cmd/root.go (75.0%)</option>
+				
+				<option value="file7">github.com/shapestone/foundry/cmd/foundry/cmd/validation.go (97.9%)</option>
+				
+				<option value="file8">github.com/shapestone/foundry/cmd/foundry/cmd/wire.go (100.0%)</option>
+				
+				<option value="file9">github.com/shapestone/foundry/cmd/foundry/cmd/wire_handler.go (0.0%)</option>
+				
+				<option value="file10">github.com/shapestone/foundry/cmd/foundry/cmd/wire_middleware.go (0.0%)</option>
+				
+				<option value="file11">github.com/shapestone/foundry/internal/generator/components.go (83.8%)</option>
+				
+				<option value="file12">github.com/shapestone/foundry/internal/generator/generator.go (78.6%)</option>
+				
+				<option value="file13">github.com/shapestone/foundry/internal/interactive/prompt.go (92.0%)</option>
+				
+				<option value="file14">github.com/shapestone/foundry/internal/project/module.go (100.0%)</option>
+				
+				<option value="file15">github.com/shapestone/foundry/internal/project/project.go (50.0%)</option>
+				
+				<option value="file16">github.com/shapestone/foundry/internal/routes/updater.go (94.5%)</option>
+				
+				<option value="file17">github.com/shapestone/foundry/internal/utils/file_updater.go (28.6%)</option>
+				
+				<option value="file18">github.com/shapestone/foundry/internal/utils/utils.go (100.0%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package cmd
+
+import (
+        "fmt"
+        "os"
+
+        "github.com/shapestone/foundry/internal/generator"
+        "github.com/spf13/cobra"
+)
+
+var addCmd = &amp;cobra.Command{
+        Use:     "add [resource] [name]",
+        Aliases: []string{"a"},
+        Short:   "Add components to your project",
+        Long: `Add components like handlers, models, and middleware to your Go project.
+
+The add command validates component names to ensure they follow Go conventions
+and will generate valid, compilable code.`,
+        Example: `  foundry add handler user
+  foundry add model product  
+  foundry add middleware auth`,
+        Args: cobra.MinimumNArgs(1),
+        PersistentPreRunE: func(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+                // Validate arguments before running subcommands
+                if len(args) &gt;= 2 </span><span class="cov0" title="0">{
+                        return ValidateAddCommandArgs(args)
+                }</span>
+                <span class="cov0" title="0">return nil</span>
+        },
+}
+
+// addHandlerCmd represents the handler command under add
+var addHandlerCmd = &amp;cobra.Command{
+        Use:   "handler [name]",
+        Short: "Add a new REST handler",
+        Long: `Add a new REST handler to your project.
+
+This will create a new handler file with standard HTTP methods and routes.
+The handler name must be a valid Go identifier and follow naming conventions.`,
+        Example: `  foundry add handler user
+  foundry add handler user-profile
+  foundry add handler product-catalog`,
+        Args: cobra.ExactArgs(1),
+        PreRunE: func(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+                return ValidateComponentName(args[0])
+        }</span>,
+        Run: func(cmd *cobra.Command, args []string) <span class="cov0" title="0">{
+                handlerName := args[0]
+                fmt.Printf("✨ Creating handler: %s\n", handlerName)
+
+                // Create the handler file
+                err := generator.CreateHandler(handlerName)
+                if err != nil </span><span class="cov0" title="0">{
+                        fmt.Fprintf(os.Stderr, "❌ Failed to create handler: %v\n", err)
+                        os.Exit(1)
+                }</span>
+
+                <span class="cov0" title="0">fmt.Printf("✅ Handler %s created successfully!\n", handlerName)
+                fmt.Printf("📁 File created: internal/handlers/%s.go\n", handlerName)</span>
+        },
+}
+
+// addModelCmd represents the model command under add
+var addModelCmd = &amp;cobra.Command{
+        Use:   "model [name]",
+        Short: "Add a new data model",
+        Long: `Add a new data model to your project.
+
+This will create a new model file with struct definition and common methods.
+The model name must be a valid Go identifier and follow naming conventions.`,
+        Example: `  foundry add model user
+  foundry add model product
+  foundry add model user-profile`,
+        Args: cobra.ExactArgs(1),
+        PreRunE: func(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+                return ValidateComponentName(args[0])
+        }</span>,
+        Run: func(cmd *cobra.Command, args []string) <span class="cov0" title="0">{
+                modelName := args[0]
+                fmt.Printf("✨ Creating model: %s\n", modelName)
+
+                // Create the model file
+                err := generator.CreateModel(modelName)
+                if err != nil </span><span class="cov0" title="0">{
+                        fmt.Fprintf(os.Stderr, "❌ Failed to create model: %v\n", err)
+                        os.Exit(1)
+                }</span>
+
+                <span class="cov0" title="0">fmt.Printf("✅ Model %s created successfully!\n", modelName)
+                fmt.Printf("📁 File created: internal/models/%s.go\n", modelName)</span>
+        },
+}
+
+// addMiddlewareCmd represents the middleware command under add
+var addMiddlewareCmd = &amp;cobra.Command{
+        Use:   "middleware [name]",
+        Short: "Add middleware to your project",
+        Long: `Add middleware to your project.
+
+This will create a new middleware file with standard middleware patterns.
+The middleware name must be a valid Go identifier and follow naming conventions.`,
+        Example: `  foundry add middleware auth
+  foundry add middleware cors
+  foundry add middleware rate-limit`,
+        Args: cobra.ExactArgs(1),
+        PreRunE: func(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+                return ValidateComponentName(args[0])
+        }</span>,
+        Run: func(cmd *cobra.Command, args []string) <span class="cov0" title="0">{
+                middlewareName := args[0]
+                fmt.Printf("✨ Creating middleware: %s\n", middlewareName)
+
+                // Create the middleware file
+                err := generator.CreateMiddleware(middlewareName)
+                if err != nil </span><span class="cov0" title="0">{
+                        fmt.Fprintf(os.Stderr, "❌ Failed to create middleware: %v\n", err)
+                        os.Exit(1)
+                }</span>
+
+                <span class="cov0" title="0">fmt.Printf("✅ Middleware %s created successfully!\n", middlewareName)
+                fmt.Printf("📁 File created: internal/middleware/%s.go\n", middlewareName)</span>
+        },
+}
+
+// validateAndRunCommand is a helper that validates name and runs a function
+func validateAndRunCommand(name string, fn func(string)) error <span class="cov0" title="0">{
+        if err := ValidateComponentName(name); err != nil </span><span class="cov0" title="0">{
+                fmt.Fprintf(os.Stderr, "❌ Invalid component name: %v\n", err)
+                return err
+        }</span>
+
+        <span class="cov0" title="0">fn(name)
+        return nil</span>
+}
+
+func init() <span class="cov8" title="1">{
+        // Add subcommands
+        addCmd.AddCommand(addHandlerCmd)
+        addCmd.AddCommand(addModelCmd)
+        addCmd.AddCommand(addMiddlewareCmd)
+
+        // Add to existing commands if they exist
+        if handlerCmd != nil </span><span class="cov8" title="1">{
+                addCmd.AddCommand(handlerCmd)
+        }</span>
+        <span class="cov8" title="1">if modelCmd != nil </span><span class="cov8" title="1">{
+                addCmd.AddCommand(modelCmd)
+        }</span>
+        <span class="cov8" title="1">if middlewareCmd != nil </span><span class="cov8" title="1">{
+                addCmd.AddCommand(middlewareCmd)
+        }</span>
+        <span class="cov8" title="1">if databaseCmd != nil </span><span class="cov8" title="1">{
+                addCmd.AddCommand(databaseCmd)
+        }</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package cmd
+
+import (
+        "fmt"
+        "os"
+        "path/filepath"
+        "strings"
+
+        "github.com/shapestone/foundry"
+        "github.com/shapestone/foundry/internal/generator"
+        "github.com/shapestone/foundry/internal/project"
+        "github.com/spf13/cobra"
+)
+
+var databaseCmd = &amp;cobra.Command{
+        Use:   "db [type]",
+        Short: "Add database support to your project",
+        Args:  cobra.ExactArgs(1),
+        Example: `  foundry add db postgres
+  foundry add db mysql
+  foundry add db sqlite
+  foundry add db mongodb`,
+        Run: func(cmd *cobra.Command, args []string) <span class="cov0" title="0">{
+                withMigrations, _ := cmd.Flags().GetBool("with-migrations")
+                withDocker, _ := cmd.Flags().GetBool("with-docker")
+                addDatabase(args[0], withMigrations, withDocker)
+        }</span>,
+}
+
+var supportedDatabases = map[string]struct {
+        description string
+        driver      string
+        defaultPort string
+        dockerImage string
+}{
+        "postgres": {
+                description: "PostgreSQL - Advanced open-source relational database",
+                driver:      "pgx",
+                defaultPort: "5432",
+                dockerImage: "postgres:16-alpine",
+        },
+        "mysql": {
+                description: "MySQL - Popular open-source relational database",
+                driver:      "mysql",
+                defaultPort: "3306",
+                dockerImage: "mysql:8",
+        },
+        "sqlite": {
+                description: "SQLite - Lightweight embedded database",
+                driver:      "sqlite3",
+                defaultPort: "",
+                dockerImage: "",
+        },
+        "mongodb": {
+                description: "MongoDB - Document-oriented NoSQL database",
+                driver:      "mongo",
+                defaultPort: "27017",
+                dockerImage: "mongo:7",
+        },
+}
+
+func init() <span class="cov8" title="1">{
+        databaseCmd.Flags().Bool("with-migrations", false, "Include migration setup")
+        databaseCmd.Flags().Bool("with-docker", false, "Add docker-compose configuration")
+}</span>
+
+func addDatabase(dbType string, withMigrations bool, withDocker bool) <span class="cov0" title="0">{
+        // Check if we're in a Go project
+        if _, err := os.Stat("go.mod"); os.IsNotExist(err) </span><span class="cov0" title="0">{
+                fmt.Println("❌ Error: go.mod not found. Please run this command from your project root")
+                os.Exit(1)
+        }</span>
+
+        // Validate database type
+        <span class="cov0" title="0">dbInfo, ok := supportedDatabases[dbType]
+        if !ok </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error: unsupported database type '%s'\n", dbType)
+                fmt.Println("Supported types:")
+                for t, info := range supportedDatabases </span><span class="cov0" title="0">{
+                        fmt.Printf("  - %s: %s\n", t, info.description)
+                }</span>
+                <span class="cov0" title="0">os.Exit(1)</span>
+        }
+
+        <span class="cov0" title="0">fmt.Printf("🗄️  Adding database: %s\n", dbType)
+
+        // Create database directory
+        dbDir := filepath.Join("internal", "database")
+        dbPath := filepath.Join(dbDir, "database.go")
+
+        // Check if database config already exists
+        if _, err := os.Stat(dbPath); err == nil </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error: database configuration already exists at %s\n", dbPath)
+                os.Exit(1)
+        }</span>
+
+        // Data for templates
+        <span class="cov0" title="0">data := struct {
+                DBType      string
+                DBTypeLower string
+                DBTypeTitle string
+                Driver      string
+                DefaultPort string
+                ProjectName string
+                Module      string
+                DockerImage string
+        }{
+                DBType:      dbType,
+                DBTypeLower: dbType,
+                DBTypeTitle: getDBTitle(dbType),
+                Driver:      dbInfo.driver,
+                DefaultPort: dbInfo.defaultPort,
+                ProjectName: project.GetProjectName(),
+                Module:      project.GetCurrentModule(),
+                DockerImage: dbInfo.dockerImage,
+        }
+
+        // Read database template
+        templateFile := fmt.Sprintf("templates/database-%s.go.tmpl", dbType)
+        tmplContent, err := foundry.Templates.ReadFile(templateFile)
+        if err != nil </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error reading database template: %v\n", err)
+                os.Exit(1)
+        }</span>
+
+        // Create database configuration
+        <span class="cov0" title="0">gen := generator.NewFileGenerator()
+        if err := gen.Generate(dbPath, string(tmplContent), data); err != nil </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error creating database configuration: %v\n", err)
+                os.Exit(1)
+        }</span>
+
+        // Create config file
+        <span class="cov0" title="0">configPath := filepath.Join(dbDir, "config.go")
+        configTmpl, err := foundry.Templates.ReadFile("templates/database-config.go.tmpl")
+        if err != nil </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error reading config template: %v\n", err)
+                os.Exit(1)
+        }</span>
+
+        <span class="cov0" title="0">if err := gen.Generate(configPath, string(configTmpl), data); err != nil </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error creating config: %v\n", err)
+                os.Exit(1)
+        }</span>
+
+        // Handle migrations
+        <span class="cov0" title="0">if withMigrations &amp;&amp; dbType != "mongodb" </span><span class="cov0" title="0">{
+                createMigrationSetup(dbType, data)
+        }</span>
+
+        // Handle Docker
+        <span class="cov0" title="0">if withDocker &amp;&amp; dbInfo.dockerImage != "" </span><span class="cov0" title="0">{
+                createDockerSetup(dbType, data)
+        }</span>
+
+        // Create .env.example if it doesn't exist
+        <span class="cov0" title="0">createEnvExample(dbType, dbInfo.defaultPort)
+
+        // Show success message
+        showDatabaseSuccess(dbType, dbPath, dbInfo, withMigrations, withDocker)</span>
+}
+
+func getDBTitle(dbType string) string <span class="cov0" title="0">{
+        switch dbType </span>{
+        case "postgres":<span class="cov0" title="0">
+                return "PostgreSQL"</span>
+        case "mysql":<span class="cov0" title="0">
+                return "MySQL"</span>
+        case "sqlite":<span class="cov0" title="0">
+                return "SQLite"</span>
+        case "mongodb":<span class="cov0" title="0">
+                return "MongoDB"</span>
+        default:<span class="cov0" title="0">
+                return dbType</span>
+        }
+}
+
+func createMigrationSetup(dbType string, data interface{}) <span class="cov0" title="0">{
+        migrationsDir := filepath.Join("migrations")
+        if err := os.MkdirAll(migrationsDir, 0755); err != nil </span><span class="cov0" title="0">{
+                fmt.Printf("⚠️  Warning: couldn't create migrations directory: %v\n", err)
+                return
+        }</span>
+
+        // Create README for migrations
+        <span class="cov0" title="0">readmePath := filepath.Join(migrationsDir, "README.md")
+        readmeTmpl, err := foundry.Templates.ReadFile("templates/migrations-readme.md.tmpl")
+        if err == nil </span><span class="cov0" title="0">{
+                gen := generator.NewFileGenerator()
+                gen.Generate(readmePath, string(readmeTmpl), data)
+        }</span>
+
+        // Create example migration
+        <span class="cov0" title="0">examplePath := filepath.Join(migrationsDir, "001_initial_schema.sql")
+        exampleTmpl, err := foundry.Templates.ReadFile(fmt.Sprintf("templates/migration-example-%s.sql.tmpl", dbType))
+        if err == nil </span><span class="cov0" title="0">{
+                gen := generator.NewFileGenerator()
+                gen.Generate(examplePath, string(exampleTmpl), data)
+        }</span>
+}
+
+func createDockerSetup(dbType string, data interface{}) <span class="cov0" title="0">{
+        // Check if docker-compose.yml exists
+        dockerPath := "docker-compose.yml"
+        if _, err := os.Stat(dockerPath); err == nil </span><span class="cov0" title="0">{
+                fmt.Println("⚠️  docker-compose.yml already exists, skipping Docker setup")
+                return
+        }</span>
+
+        // Create docker-compose.yml
+        <span class="cov0" title="0">dockerTmpl, err := foundry.Templates.ReadFile(fmt.Sprintf("templates/docker-compose-%s.yml.tmpl", dbType))
+        if err != nil </span><span class="cov0" title="0">{
+                fmt.Printf("⚠️  Warning: couldn't find Docker template for %s\n", dbType)
+                return
+        }</span>
+
+        <span class="cov0" title="0">gen := generator.NewFileGenerator()
+        if err := gen.Generate(dockerPath, string(dockerTmpl), data); err != nil </span><span class="cov0" title="0">{
+                fmt.Printf("⚠️  Warning: couldn't create docker-compose.yml: %v\n", err)
+        }</span>
+}
+
+func createEnvExample(dbType string, defaultPort string) <span class="cov0" title="0">{
+        envPath := ".env.example"
+
+        // Read existing content if file exists
+        existing := ""
+        if content, err := os.ReadFile(envPath); err == nil </span><span class="cov0" title="0">{
+                existing = string(content)
+        }</span>
+
+        // Prepare database environment variables
+        <span class="cov0" title="0">var dbEnvVars string
+        switch dbType </span>{
+        case "postgres":<span class="cov0" title="0">
+                dbEnvVars = `
+# PostgreSQL Configuration
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=myapp
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_SSLMODE=disable
+`</span>
+        case "mysql":<span class="cov0" title="0">
+                dbEnvVars = `
+# MySQL Configuration
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=myapp
+DB_USER=root
+DB_PASSWORD=mysql
+`</span>
+        case "sqlite":<span class="cov0" title="0">
+                dbEnvVars = `
+# SQLite Configuration
+DB_PATH=./data/app.db
+`</span>
+        case "mongodb":<span class="cov0" title="0">
+                dbEnvVars = `
+# MongoDB Configuration
+MONGO_URI=mongodb://localhost:27017
+MONGO_DATABASE=myapp
+`</span>
+        }
+
+        // Append to existing content
+        <span class="cov0" title="0">if existing != "" &amp;&amp; !strings.Contains(existing, "Database Configuration") </span><span class="cov0" title="0">{
+                existing += "\n" + dbEnvVars
+        }</span> else<span class="cov0" title="0"> if existing == "" </span><span class="cov0" title="0">{
+                existing = dbEnvVars
+        }</span>
+
+        // Write the file
+        <span class="cov0" title="0">if err := os.WriteFile(envPath, []byte(existing), 0644); err != nil </span><span class="cov0" title="0">{
+                fmt.Printf("⚠️  Warning: couldn't create .env.example: %v\n", err)
+        }</span>
+}
+
+func showDatabaseSuccess(dbType string, dbPath string, dbInfo struct {
+        description string
+        driver      string
+        defaultPort string
+        dockerImage string
+}, withMigrations bool, withDocker bool) <span class="cov0" title="0">{
+        moduleName := project.GetCurrentModule()
+
+        migrationInfo := ""
+        if withMigrations &amp;&amp; dbType != "mongodb" </span><span class="cov0" title="0">{
+                migrationInfo = `
+📁 Migrations:
+  migrations/
+  ├── README.md
+  └── 001_initial_schema.sql
+
+  Run migrations with:
+  go run . migrate up
+`
+        }</span>
+
+        <span class="cov0" title="0">dockerInfo := ""
+        if withDocker &amp;&amp; dbInfo.dockerImage != "" </span><span class="cov0" title="0">{
+                dockerInfo = fmt.Sprintf(`
+🐳 Docker:
+  docker-compose.yml created
+  
+  Start database:
+  docker-compose up -d
+
+  Stop database:
+  docker-compose down
+`)
+        }</span>
+
+        <span class="cov0" title="0">var setupSteps string
+        switch dbType </span>{
+        case "postgres":<span class="cov0" title="0">
+                setupSteps = fmt.Sprintf(`
+📌 Setup steps:
+
+1. Install dependencies:
+   go get github.com/jackc/pgx/v5
+   go get github.com/jackc/pgx/v5/pgxpool
+
+2. Update your .env file with database credentials:
+   cp .env.example .env
+   # Edit .env with your database details
+
+3. Import and initialize the database in main.go:
+   import "%s/internal/database"
+
+   // In main():
+   db, err := database.NewConnection()
+   if err != nil {
+       log.Fatal("Failed to connect to database:", err)
+   }
+   defer db.Close()
+
+4. Use the database in your handlers:
+   type UserHandler struct {
+       db *database.DB
+   }
+
+   func NewUserHandler(db *database.DB) *UserHandler {
+       return &amp;UserHandler{db: db}
+   }
+
+5. Example query:
+   rows, err := h.db.Query(ctx, "SELECT id, name FROM users")
+   if err != nil {
+       return err
+   }
+   defer rows.Close()`, moduleName)</span>
+
+        case "mysql":<span class="cov0" title="0">
+                setupSteps = fmt.Sprintf(`
+📌 Setup steps:
+
+1. Install dependencies:
+   go get github.com/go-sql-driver/mysql
+
+2. Update your .env file with database credentials:
+   cp .env.example .env
+   # Edit .env with your database details
+
+3. Import and initialize the database in main.go:
+   import "%s/internal/database"
+
+   // In main():
+   db, err := database.NewConnection()
+   if err != nil {
+       log.Fatal("Failed to connect to database:", err)
+   }
+   defer db.Close()
+
+4. Use the database in your handlers:
+   type UserHandler struct {
+       db *database.DB
+   }
+
+   func NewUserHandler(db *database.DB) *UserHandler {
+       return &amp;UserHandler{db: db}
+   }
+
+5. Example query:
+   rows, err := h.db.QueryContext(ctx, "SELECT id, name FROM users")
+   if err != nil {
+       return err
+   }
+   defer rows.Close()`, moduleName)</span>
+
+        case "sqlite":<span class="cov0" title="0">
+                setupSteps = fmt.Sprintf(`
+📌 Setup steps:
+
+1. Install dependencies:
+   go get github.com/mattn/go-sqlite3
+
+2. Update your .env file with database path:
+   cp .env.example .env
+   # Edit .env if you want a different path
+
+3. Import and initialize the database in main.go:
+   import "%s/internal/database"
+
+   // In main():
+   db, err := database.NewConnection()
+   if err != nil {
+       log.Fatal("Failed to connect to database:", err)
+   }
+   defer db.Close()
+
+4. Use the database in your handlers:
+   type UserHandler struct {
+       db *database.DB
+   }
+
+   func NewUserHandler(db *database.DB) *UserHandler {
+       return &amp;UserHandler{db: db}
+   }
+
+5. Example query:
+   rows, err := h.db.QueryContext(ctx, "SELECT id, name FROM users")
+   if err != nil {
+       return err
+   }
+   defer rows.Close()`, moduleName)</span>
+
+        case "mongodb":<span class="cov0" title="0">
+                setupSteps = fmt.Sprintf(`
+📌 Setup steps:
+
+1. Install dependencies:
+   go get go.mongodb.org/mongo-driver/mongo
+
+2. Update your .env file with MongoDB connection:
+   cp .env.example .env
+   # Edit .env with your MongoDB details
+
+3. Import and initialize the database in main.go:
+   import "%s/internal/database"
+
+   // In main():
+   db, err := database.NewConnection()
+   if err != nil {
+       log.Fatal("Failed to connect to database:", err)
+   }
+   defer db.Disconnect()
+
+4. Use the database in your handlers:
+   type UserHandler struct {
+       db *database.DB
+   }
+
+   func NewUserHandler(db *database.DB) *UserHandler {
+       return &amp;UserHandler{db: db}
+   }
+
+5. Example query:
+   collection := h.db.Collection("users")
+   
+   var user User
+   err := collection.FindOne(ctx, bson.M{"_id": id}).Decode(&amp;user)
+   if err != nil {
+       return err
+   }`, moduleName)</span>
+        }
+
+        <span class="cov0" title="0">fmt.Printf(`✅ Database support added successfully!
+
+📁 Created:
+  %s
+  internal/database/config.go
+  .env.example
+%s%s
+📝 Database: %s
+  %s
+%s
+🔧 Features included:
+  - Connection pooling
+  - Context support
+  - Graceful shutdown
+  - Environment-based configuration
+  - Health check endpoint
+  - Query timeout handling
+  %s
+
+💡 Next steps:
+  - Run: go mod tidy
+  - Configure your database connection in .env
+  - Start coding with your database!
+`,
+                dbPath,
+                migrationInfo,
+                dockerInfo,
+                dbInfo.description,
+                fmt.Sprintf("Driver: %s", dbInfo.driver),
+                setupSteps,
+                func() string </span><span class="cov0" title="0">{
+                        if withMigrations &amp;&amp; dbType != "mongodb" </span><span class="cov0" title="0">{
+                                return "- Migration support"
+                        }</span>
+                        <span class="cov0" title="0">return ""</span>
+                }())
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package cmd
+
+import (
+        "fmt"
+        "os"
+        "path/filepath"
+        "strings"
+
+        "github.com/shapestone/foundry"
+        "github.com/shapestone/foundry/internal/generator"
+        "github.com/shapestone/foundry/internal/project"
+        "github.com/shapestone/foundry/internal/utils"
+        "github.com/spf13/cobra"
+)
+
+var handlerCmd = &amp;cobra.Command{
+        Use:   "handler [name]",
+        Short: "Add a new REST handler",
+        Args:  cobra.ExactArgs(1),
+        PreRunE: func(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+                if len(args) &gt; 0 </span><span class="cov0" title="0">{
+                        if err := ValidateComponentName(args[0]); err != nil </span><span class="cov0" title="0">{
+                                return fmt.Errorf("invalid handler name: %v", err)
+                        }</span>
+                }
+                <span class="cov0" title="0">return nil</span>
+        },
+        Example: `  foundry add handler user
+  foundry add handler product
+  foundry add handler order --dry-run
+  foundry add handler user --auto-wire`,
+        Run: func(cmd *cobra.Command, args []string) {<span class="cov0" title="0">
+                // existing run logic...
+        }</span>,
+}
+
+func init() <span class="cov8" title="1">{
+        handlerCmd.Flags().Bool("dry-run", false, "Preview changes without applying them")
+        handlerCmd.Flags().Bool("auto-wire", false, "Automatically wire the handler into routes")
+}</span>
+
+func addHandler(name string, dryRun bool, autoWire bool) <span class="cov0" title="0">{
+        // Check if we're in a Go project
+        if _, err := os.Stat("go.mod"); os.IsNotExist(err) </span><span class="cov0" title="0">{
+                fmt.Println("❌ Error: go.mod not found. Please run this command from your project root")
+                os.Exit(1)
+        }</span>
+
+        // Convert name to different cases
+        <span class="cov0" title="0">handlerName := strings.Title(name)
+        resourceName := strings.ToLower(name)
+        resourcePath := strings.ToLower(name) + "s" // simple pluralization
+        resourceNamePlural := resourcePath
+
+        fmt.Printf("🔨 Adding handler: %s\n", name)
+
+        // Create handler file
+        handlerDir := filepath.Join("internal", "handlers")
+        handlerPath := filepath.Join(handlerDir, fmt.Sprintf("%s.go", resourceName))
+
+        // Check if handler already exists
+        if _, err := os.Stat(handlerPath); err == nil </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error: handler %s already exists\n", handlerPath)
+                os.Exit(1)
+        }</span>
+
+        // Data for template
+        <span class="cov0" title="0">data := struct {
+                HandlerName        string
+                ResourceName       string
+                ResourcePath       string
+                ResourceNamePlural string
+        }{
+                HandlerName:        handlerName,
+                ResourceName:       resourceName,
+                ResourcePath:       resourcePath,
+                ResourceNamePlural: resourceNamePlural,
+        }
+
+        if !dryRun </span><span class="cov0" title="0">{
+                // Read handler template
+                tmplContent, err := foundry.Templates.ReadFile("templates/handler.go.tmpl")
+                if err != nil </span><span class="cov0" title="0">{
+                        fmt.Printf("❌ Error reading handler template: %v\n", err)
+                        os.Exit(1)
+                }</span>
+
+                // Use the new generator
+                <span class="cov0" title="0">gen := generator.NewFileGenerator()
+                if err := gen.Generate(handlerPath, string(tmplContent), data); err != nil </span><span class="cov0" title="0">{
+                        fmt.Printf("❌ Error creating handler: %v\n", err)
+                        os.Exit(1)
+                }</span>
+        }
+
+        // Handle auto-wiring
+        <span class="cov0" title="0">if autoWire </span><span class="cov0" title="0">{
+                fmt.Println("\n🔄 Auto-wiring handler...")
+                if err := utils.UpdateRoutesFile(name, dryRun); err != nil </span><span class="cov0" title="0">{
+                        fmt.Printf("❌ Error auto-wiring handler: %v\n", err)
+                        if !dryRun </span><span class="cov0" title="0">{
+                                fmt.Println("💡 Your handler was created but you'll need to manually wire it up")
+                                fmt.Println("   You can try: foundry wire handler " + name)
+                        }</span>
+                } else<span class="cov0" title="0"> {
+                        if !dryRun </span><span class="cov0" title="0">{
+                                showHandlerSuccess(handlerPath, resourcePath, resourceNamePlural, resourceName, true)
+                        }</span>
+                }
+        } else<span class="cov0" title="0"> {
+                // Show manual wiring instructions
+                if !dryRun </span><span class="cov0" title="0">{
+                        showHandlerSuccess(handlerPath, resourcePath, resourceNamePlural, resourceName, false)
+                }</span>
+        }
+}
+
+func showHandlerSuccess(handlerPath, resourcePath, resourceNamePlural, resourceName string, autoWired bool) <span class="cov0" title="0">{
+        moduleName := project.GetCurrentModule()
+
+        wireStatus := ""
+        if autoWired </span><span class="cov0" title="0">{
+                wireStatus = `📝 Routes updated:
+  internal/routes/routes.go
+
+`
+        }</span> else<span class="cov0" title="0"> {
+                wireStatus = `📌 Manual wiring required:
+  Run: foundry wire handler ` + resourceName + `
+  Or manually update internal/routes/routes.go
+
+`
+        }</span>
+
+        <span class="cov0" title="0">fmt.Printf(`✅ Handler created successfully!
+
+📁 Created:
+  %s
+
+%s🚀 Available endpoints:
+  GET    /api/v1/%s       - List all %s
+  POST   /api/v1/%s       - Create a new %s
+  GET    /api/v1/%s/{id}  - Get %s by ID
+  PUT    /api/v1/%s/{id}  - Update %s by ID
+  DELETE /api/v1/%s/{id}  - Delete %s by ID
+
+💡 Next steps:
+  - Import the handlers package in your routes file:
+    import "%s/internal/handlers"
+  - Implement your business logic in %s
+  - Add validation and error handling
+  - Connect to your database or service layer
+`, handlerPath,
+                wireStatus,
+                resourcePath, resourceNamePlural,
+                resourcePath, resourceName,
+                resourcePath, resourceName,
+                resourcePath, resourceName,
+                resourcePath, resourceName,
+                moduleName,
+                handlerPath)</span>
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package cmd
+
+import (
+        "fmt"
+        "os"
+        "path/filepath"
+
+        "github.com/shapestone/foundry"
+        "github.com/shapestone/foundry/internal/generator"
+        "github.com/shapestone/foundry/internal/project"
+        "github.com/spf13/cobra"
+)
+
+var middlewareCmd = &amp;cobra.Command{
+        Use:   "middleware [type]",
+        Short: "Add middleware to your project",
+        Args:  cobra.ExactArgs(1),
+        PreRunE: func(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+                if len(args) &gt; 0 </span><span class="cov0" title="0">{
+                        if err := ValidateComponentName(args[0]); err != nil </span><span class="cov0" title="0">{
+                                return fmt.Errorf("invalid middleware name: %v", err)
+                        }</span>
+                }
+                <span class="cov0" title="0">return nil</span>
+        },
+        Example: `  foundry add middleware auth
+  foundry add middleware ratelimit
+  foundry add middleware cors
+  foundry add middleware logging
+  foundry add middleware recovery
+  foundry add middleware timeout
+  foundry add middleware compression`,
+        Run: func(cmd *cobra.Command, args []string) {<span class="cov0" title="0">
+                // existing run logic...
+        }</span>,
+}
+
+var supportedMiddleware = map[string]string{
+        "auth":        "Authentication middleware",
+        "ratelimit":   "Rate limiting middleware",
+        "cors":        "CORS middleware",
+        "logging":     "Request/response logging middleware",
+        "recovery":    "Panic recovery middleware",
+        "timeout":     "Request timeout middleware",
+        "compression": "Response compression middleware",
+}
+
+func init() <span class="cov8" title="1">{
+        middlewareCmd.Flags().Bool("auto-wire", false, "Automatically wire the middleware (coming soon)")
+}</span>
+
+func addMiddleware(middlewareType string, autoWire bool) <span class="cov0" title="0">{
+        // Check if we're in a Go project
+        if _, err := os.Stat("go.mod"); os.IsNotExist(err) </span><span class="cov0" title="0">{
+                fmt.Println("❌ Error: go.mod not found. Please run this command from your project root")
+                os.Exit(1)
+        }</span>
+
+        // Validate middleware type
+        <span class="cov0" title="0">description, ok := supportedMiddleware[middlewareType]
+        if !ok </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error: unsupported middleware type '%s'\n", middlewareType)
+                fmt.Println("Supported types:")
+                for t, d := range supportedMiddleware </span><span class="cov0" title="0">{
+                        fmt.Printf("  - %s: %s\n", t, d)
+                }</span>
+                <span class="cov0" title="0">os.Exit(1)</span>
+        }
+
+        <span class="cov0" title="0">fmt.Printf("🔨 Adding middleware: %s\n", middlewareType)
+
+        // Create middleware directory
+        middlewareDir := filepath.Join("internal", "middleware")
+        middlewarePath := filepath.Join(middlewareDir, fmt.Sprintf("%s.go", middlewareType))
+
+        // Check if middleware already exists
+        if _, err := os.Stat(middlewarePath); err == nil </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error: middleware %s already exists\n", middlewarePath)
+                os.Exit(1)
+        }</span>
+
+        // Read middleware template
+        <span class="cov0" title="0">templateFile := fmt.Sprintf("templates/middleware-%s.go.tmpl", middlewareType)
+        tmplContent, err := foundry.Templates.ReadFile(templateFile)
+        if err != nil </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error reading middleware template: %v\n", err)
+                os.Exit(1)
+        }</span>
+
+        // Use the new generator
+        <span class="cov0" title="0">gen := generator.NewFileGenerator()
+        if err := gen.Generate(middlewarePath, string(tmplContent), nil); err != nil </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error creating middleware: %v\n", err)
+                os.Exit(1)
+        }</span>
+
+        // Handle auto-wiring
+        <span class="cov0" title="0">if autoWire </span><span class="cov0" title="0">{
+                fmt.Println("\n🔄 Auto-wiring middleware...")
+                fmt.Println("⚠️  Auto-wiring for middleware is coming in the next release!")
+                fmt.Println("   For now, showing manual steps...")
+                showMiddlewareSuccess(middlewareType, middlewarePath, description, true)
+        }</span> else<span class="cov0" title="0"> {
+                // Show manual wiring instructions
+                showMiddlewareSuccess(middlewareType, middlewarePath, description, false)
+        }</span>
+}
+
+func showMiddlewareSuccess(middlewareType, path, description string, showAutoWireNote bool) <span class="cov0" title="0">{
+        var usage string
+        moduleName := project.GetCurrentModule()
+
+        // Add note about auto-wiring at the beginning
+        autoWireNote := ""
+        if showAutoWireNote </span><span class="cov0" title="0">{
+                autoWireNote = `
+🔮 Coming soon:
+  foundry add middleware ` + middlewareType + ` --auto-wire
+  foundry wire middleware ` + middlewareType + `
+`
+        }</span>
+
+        <span class="cov0" title="0">switch middlewareType </span>{
+        case "auth":<span class="cov0" title="0">
+                usage = fmt.Sprintf(`
+📌 Manual steps required:
+
+1. Import the middleware package in main.go:
+   import "%s/internal/middleware"
+
+2. Choose where to apply authentication:
+
+   Option A - Protect all API routes:
+   ┌─────────────────────────────────────────────────────┐
+   │ // In main.go, find this section:                  │
+   │ r.Route("/api/v1", routes.RegisterAPIRoutes)       │
+   │                                                     │
+   │ // Replace with:                                    │
+   │ r.Route("/api/v1", func(r chi.Router) {            │
+   │     r.Use(middleware.AuthMiddleware)                │
+   │     routes.RegisterAPIRoutes(r)                     │
+   │ })                                                  │
+   └─────────────────────────────────────────────────────┘
+
+   Option B - Protect specific routes:
+   ┌─────────────────────────────────────────────────────┐
+   │ // In internal/routes/routes.go:                    │
+   │ func RegisterAPIRoutes(r chi.Router) {              │
+   │     // Add this at the top:                         │
+   │     r.Group(func(r chi.Router) {                    │
+   │         r.Use(middleware.AuthMiddleware)            │
+   │         r.Mount("/users", userHandler.Routes())     │
+   │         r.Mount("/admin", adminHandler.Routes())    │
+   │     })                                              │
+   │                                                     │
+   │     // Public routes (no auth)                      │
+   │     r.Mount("/public", publicHandler.Routes())      │
+   │ }                                                   │
+   └─────────────────────────────────────────────────────┘
+
+3. Test your protected endpoints:
+   # This should return 401 Unauthorized:
+   curl http://localhost:8080/api/v1/users
+   
+   # This should work:
+   curl -H "Authorization: Bearer valid-token" http://localhost:8080/api/v1/users`, moduleName)</span>
+
+        case "ratelimit":<span class="cov0" title="0">
+                usage = fmt.Sprintf(`
+📌 Manual steps required:
+
+1. Import the middleware package in main.go:
+   import (
+       "time"
+       "%s/internal/middleware"
+   )
+
+2. Add rate limiting to your routes:
+
+   Option A - Global rate limit (all routes):
+   ┌─────────────────────────────────────────────────────┐
+   │ // In main.go, after creating the router:           │
+   │ r := chi.NewRouter()                                │
+   │                                                     │
+   │ // Add rate limiting (100 requests/minute)          │
+   │ r.Use(middleware.RateLimitMiddleware(100,           │
+   │      time.Minute))                                  │
+   └─────────────────────────────────────────────────────┘
+
+   Option B - Different limits for different routes:
+   ┌─────────────────────────────────────────────────────┐
+   │ // Strict limit for expensive operations:           │
+   │ r.Group(func(r chi.Router) {                        │
+   │     r.Use(middleware.RateLimitMiddleware(10,        │
+   │          time.Minute))                              │
+   │     r.Post("/api/v1/send-email", emailHandler)     │
+   │     r.Post("/api/v1/generate-report",               │
+   │          reportHandler)                             │
+   │ })                                                  │
+   │                                                     │
+   │ // Normal limit for other API routes:               │
+   │ r.Group(func(r chi.Router) {                        │
+   │     r.Use(middleware.RateLimitMiddleware(100,       │
+   │          time.Minute))                              │
+   │     r.Mount("/api/v1", routes.RegisterAPIRoutes)   │
+   │ })                                                  │
+   └─────────────────────────────────────────────────────┘
+
+3. Test rate limiting:
+   # Send multiple requests quickly:
+   for i in {1..15}; do curl http://localhost:8080/api/v1/users; done
+   # After limit, you'll see: "Rate limit exceeded"`, moduleName)</span>
+
+        case "cors":<span class="cov0" title="0">
+                usage = fmt.Sprintf(`
+📌 Manual steps required:
+
+1. Import the middleware package in main.go:
+   import "%s/internal/middleware"
+
+2. Add CORS middleware (must be early in the chain):
+   ┌─────────────────────────────────────────────────────┐
+   │ // In main.go, right after creating the router:     │
+   │ r := chi.NewRouter()                                │
+   │                                                     │
+   │ // CORS must be one of the first middleware         │
+   │ r.Use(middleware.CORSMiddleware)                    │
+   │ r.Use(middleware.RequestID)                         │
+   │ r.Use(middleware.Logger)                            │
+   │ // ... other middleware                             │
+   └─────────────────────────────────────────────────────┘
+
+3. Customize CORS settings in internal/middleware/cors.go:
+   - Allowed origins (currently "*" - change for production!)
+   - Allowed methods
+   - Allowed headers
+   - Max age for preflight caching
+
+4. Test CORS:
+   # Check preflight request:
+   curl -X OPTIONS http://localhost:8080/api/v1/users \
+        -H "Origin: http://example.com" \
+        -H "Access-Control-Request-Method: POST"`, moduleName)</span>
+
+        case "logging":<span class="cov0" title="0">
+                usage = fmt.Sprintf(`
+📌 Manual steps required:
+
+1. Import the middleware package in main.go:
+   import "%s/internal/middleware"
+
+2. Add logging middleware to your router:
+   ┌─────────────────────────────────────────────────────┐
+   │ // In main.go, add logging middleware:              │
+   │ r := chi.NewRouter()                                │
+   │                                                     │
+   │ // Add after RequestID middleware for best results  │
+   │ r.Use(middleware.RequestID)                         │
+   │ r.Use(middleware.LoggingMiddleware)                 │
+   │                                                     │
+   │ // Or use structured logging for JSON output:       │
+   │ r.Use(middleware.StructuredLoggingMiddleware)       │
+   │                                                     │
+   │ // Or use custom logger to skip certain paths:      │
+   │ r.Use(middleware.NewCustomLogger("/health",         │
+   │      "/metrics"))                                   │
+   └─────────────────────────────────────────────────────┘
+
+3. Example log output:
+   # Standard format:
+   [GET] /api/v1/users 127.0.0.1:59832 200 1247B 23.5ms
+   
+   # JSON format (for log aggregation):
+   {"time":"2024-01-20T10:30:45Z","method":"GET","uri":"/api/v1/users","status":200,"bytes":1247,"duration":"23.5ms","request_id":"abc123","remote_addr":"127.0.0.1:59832","user_agent":"curl/7.79.1"}`, moduleName)</span>
+
+        case "recovery":<span class="cov0" title="0">
+                usage = fmt.Sprintf(`
+📌 Manual steps required:
+
+1. Import the middleware package in main.go:
+   import "%s/internal/middleware"
+
+2. Add recovery middleware (should be one of the first):
+   ┌─────────────────────────────────────────────────────┐
+   │ // In main.go, add recovery as early middleware:    │
+   │ r := chi.NewRouter()                                │
+   │                                                     │
+   │ // Recovery should be early in the chain            │
+   │ r.Use(middleware.RecoveryMiddleware)                │
+   │ r.Use(middleware.RequestID)                         │
+   │ r.Use(middleware.Logger)                            │
+   │                                                     │
+   │ // For development with detailed errors:            │
+   │ if isDevelopment() {                                │
+   │     r.Use(middleware.DevelopmentRecovery)           │
+   │ } else {                                            │
+   │     r.Use(middleware.RecoveryMiddleware)            │
+   │ }                                                   │
+   └─────────────────────────────────────────────────────┘
+
+3. The middleware will:
+   - Catch any panics in your handlers
+   - Log the panic and stack trace
+   - Return a clean 500 error to the client
+   - Keep your server running
+
+4. Test panic recovery:
+   # Add a test endpoint that panics:
+   r.Get("/panic", func(w http.ResponseWriter, r *http.Request) {
+       panic("test panic")
+   })
+   
+   # Server stays up and returns 500:
+   curl http://localhost:8080/panic`, moduleName)</span>
+
+        case "timeout":<span class="cov0" title="0">
+                usage = fmt.Sprintf(`
+📌 Manual steps required:
+
+1. Import the middleware package in main.go:
+   import (
+       "time"
+       "%s/internal/middleware"
+   )
+
+2. Add timeout middleware to your router:
+   ┌─────────────────────────────────────────────────────┐
+   │ // In main.go, add timeout middleware:              │
+   │ r := chi.NewRouter()                                │
+   │                                                     │
+   │ // Set a global timeout of 30 seconds               │
+   │ r.Use(middleware.TimeoutMiddleware(30 *             │
+   │      time.Second))                                  │
+   │                                                     │
+   │ // Or use configurable timeouts:                    │
+   │ timeouts := middleware.NewConfigurableTimeout(      │
+   │     30 * time.Second)                               │
+   │ timeouts.SetRouteTimeout("/api/v1/reports",         │
+   │     5 * time.Minute)                                │
+   │ timeouts.SetRouteTimeout("/api/v1/upload",          │
+   │     10 * time.Minute)                               │
+   │ r.Use(timeouts.Middleware)                          │
+   └─────────────────────────────────────────────────────┘
+
+3. The middleware will:
+   - Cancel requests that exceed the timeout
+   - Return 408 Request Timeout status
+   - Prevent goroutine leaks from long-running handlers
+
+4. Best practices:
+   - Set reasonable timeouts based on your endpoints
+   - Longer timeouts for file uploads/downloads
+   - Shorter timeouts for simple CRUD operations
+   - Monitor timeout errors in production`, moduleName)</span>
+
+        case "compression":<span class="cov0" title="0">
+                usage = fmt.Sprintf(`
+📌 Manual steps required:
+
+1. Import the middleware package in main.go:
+   import "%s/internal/middleware"
+
+2. Add compression middleware to your router:
+   ┌─────────────────────────────────────────────────────┐
+   │ // In main.go, add compression middleware:          │
+   │ r := chi.NewRouter()                                │
+   │                                                     │
+   │ // Simple compression for all responses:            │
+   │ r.Use(middleware.CompressionMiddleware)             │
+   │                                                     │
+   │ // Or use selective compression:                    │
+   │ compress := middleware.NewSelectiveCompression()    │
+   │ compress.MinSize = 1024 // Only compress &gt; 1KB     │
+   │ compress.ContentTypes = []string{                   │
+   │     "application/json",                             │
+   │     "text/html",                                    │
+   │     "text/css",                                     │
+   │     "application/javascript",                       │
+   │ }                                                   │
+   │ r.Use(compress.Middleware)                          │
+   └─────────────────────────────────────────────────────┘
+
+3. The middleware will:
+   - Compress responses using gzip
+   - Only compress if client accepts gzip encoding
+   - Skip already compressed content
+   - Add Content-Encoding: gzip header
+
+4. Test compression:
+   # Request with gzip support:
+   curl -H "Accept-Encoding: gzip" http://localhost:8080/api/v1/users -v
+   # Look for: Content-Encoding: gzip`, moduleName)</span>
+        }
+
+        <span class="cov0" title="0">fmt.Printf(`✅ Middleware created successfully!
+
+📁 Created:
+  %s
+
+📝 Description:
+  %s
+%s%s
+`, path, description, usage, autoWireNote)</span>
+}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package cmd
+
+import (
+        "fmt"
+        "os"
+        "path/filepath"
+        "strings"
+
+        "github.com/shapestone/foundry"
+        "github.com/shapestone/foundry/internal/generator"
+        "github.com/shapestone/foundry/internal/project"
+        "github.com/spf13/cobra"
+)
+
+var modelCmd = &amp;cobra.Command{
+        Use:   "model [name]",
+        Short: "Add a new data model",
+        Args:  cobra.ExactArgs(1),
+        PreRunE: func(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+                if len(args) &gt; 0 </span><span class="cov0" title="0">{
+                        if err := ValidateComponentName(args[0]); err != nil </span><span class="cov0" title="0">{
+                                return fmt.Errorf("invalid model name: %v", err)
+                        }</span>
+                }
+                <span class="cov0" title="0">return nil</span>
+        },
+        Example: `  foundry add model user
+  foundry add model product
+  foundry add model order`,
+        Run: func(cmd *cobra.Command, args []string) {<span class="cov0" title="0">
+                // existing run logic...
+        }</span>,
+}
+
+func init() {<span class="cov8" title="1">
+        // Add this command to the 'add' parent command
+        // This goes in add.go's init function
+}</span>
+
+func addModel(name string) <span class="cov0" title="0">{
+        // Check if we're in a Go project
+        if _, err := os.Stat("go.mod"); os.IsNotExist(err) </span><span class="cov0" title="0">{
+                fmt.Println("❌ Error: go.mod not found. Please run this command from your project root")
+                os.Exit(1)
+        }</span>
+
+        // Convert name to different cases
+        <span class="cov0" title="0">modelName := strings.Title(name)
+        resourceName := strings.ToLower(name)
+
+        fmt.Printf("🔨 Adding model: %s\n", name)
+
+        // Create models directory
+        modelsDir := filepath.Join("internal", "models")
+        modelPath := filepath.Join(modelsDir, fmt.Sprintf("%s.go", resourceName))
+
+        // Check if model already exists
+        if _, err := os.Stat(modelPath); err == nil </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error: model %s already exists\n", modelPath)
+                os.Exit(1)
+        }</span>
+
+        // Determine which fields to include based on model name
+        <span class="cov0" title="0">data := struct {
+                ModelName               string
+                ResourceName            string
+                IncludeNameField        bool
+                IncludeEmailField       bool
+                IncludeTitleField       bool
+                IncludeDescriptionField bool
+        }{
+                ModelName:    modelName,
+                ResourceName: resourceName,
+                // Smart defaults based on model name
+                IncludeNameField:        name == "user" || name == "customer" || name == "person",
+                IncludeEmailField:       name == "user" || name == "customer" || name == "person",
+                IncludeTitleField:       name == "post" || name == "article" || name == "product",
+                IncludeDescriptionField: name == "post" || name == "article" || name == "product" || name == "project",
+        }
+
+        // Read model template
+        tmplContent, err := foundry.Templates.ReadFile("templates/model.go.tmpl")
+        if err != nil </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error reading model template: %v\n", err)
+                os.Exit(1)
+        }</span>
+
+        // Use the new generator
+        <span class="cov0" title="0">gen := generator.NewFileGenerator()
+        if err := gen.Generate(modelPath, string(tmplContent), data); err != nil </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error creating model: %v\n", err)
+                os.Exit(1)
+        }</span>
+
+        // Show success message
+        <span class="cov0" title="0">moduleName := project.GetCurrentModule()
+        fmt.Printf(`✅ Model created successfully!
+
+📁 Created:
+  %s
+
+📝 Model includes:
+  - ID field (string)
+  - Timestamps (created_at, updated_at)
+  %s
+  - Validate() method
+  - Update() method
+  - Constructor function
+
+💡 Next steps:
+  - Implement generateID() based on your needs (UUID, ULID, etc.)
+  - Add custom fields specific to your %s
+  - Add methods for your business logic
+  - Use in your handlers:
+    
+    import "%s/internal/models"
+    
+    %s := models.New%s()
+    if err := %s.Validate(); err != nil {
+        // handle error
+    }
+`, modelPath, getFieldsList(data), resourceName, moduleName, resourceName, modelName, resourceName)</span>
+}
+
+func getFieldsList(data struct {
+        ModelName               string
+        ResourceName            string
+        IncludeNameField        bool
+        IncludeEmailField       bool
+        IncludeTitleField       bool
+        IncludeDescriptionField bool
+}) string <span class="cov0" title="0">{
+        fields := []string{}
+        if data.IncludeNameField </span><span class="cov0" title="0">{
+                fields = append(fields, "- Name field (string)")
+        }</span>
+        <span class="cov0" title="0">if data.IncludeEmailField </span><span class="cov0" title="0">{
+                fields = append(fields, "- Email field (string)")
+        }</span>
+        <span class="cov0" title="0">if data.IncludeTitleField </span><span class="cov0" title="0">{
+                fields = append(fields, "- Title field (string)")
+        }</span>
+        <span class="cov0" title="0">if data.IncludeDescriptionField </span><span class="cov0" title="0">{
+                fields = append(fields, "- Description field (string)")
+        }</span>
+        <span class="cov0" title="0">return strings.Join(fields, "\n  ")</span>
+}
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">package cmd
+
+import (
+        "fmt"
+        "os"
+        "path/filepath"
+        "strings"
+
+        "github.com/shapestone/foundry"
+        "github.com/shapestone/foundry/internal/generator"
+        "github.com/spf13/cobra"
+)
+
+var newCmd = &amp;cobra.Command{
+        Use:     "new [name]",
+        Aliases: []string{"n"},
+        Short:   "Create a new Go REST API project",
+        Args:    cobra.ExactArgs(1),
+        Example: `  foundry new myapp
+  foundry new user-service`,
+        Run: func(cmd *cobra.Command, args []string) <span class="cov0" title="0">{
+                createProject(args[0])
+        }</span>,
+}
+
+func createProject(name string) <span class="cov0" title="0">{
+        // Validate project name
+        if strings.Contains(name, " ") </span><span class="cov0" title="0">{
+                fmt.Println("❌ Error: project name cannot contain spaces")
+                os.Exit(1)
+        }</span>
+
+        <span class="cov0" title="0">fmt.Printf("🚀 Creating new project: %s\n", name)
+
+        // Create project directory
+        if err := os.Mkdir(name, 0755); err != nil </span><span class="cov0" title="0">{
+                if os.IsExist(err) </span><span class="cov0" title="0">{
+                        fmt.Printf("❌ Error: directory %s already exists\n", name)
+                }</span> else<span class="cov0" title="0"> {
+                        fmt.Printf("❌ Error creating directory: %v\n", err)
+                }</span>
+                <span class="cov0" title="0">os.Exit(1)</span>
+        }
+
+        // Create subdirectories
+        <span class="cov0" title="0">dirs := []string{
+                filepath.Join(name, "internal", "handlers"),
+                filepath.Join(name, "internal", "middleware"),
+                filepath.Join(name, "internal", "routes"),
+        }
+
+        for _, dir := range dirs </span><span class="cov0" title="0">{
+                if err := os.MkdirAll(dir, 0755); err != nil </span><span class="cov0" title="0">{
+                        fmt.Printf("❌ Error creating directory %s: %v\n", dir, err)
+                        os.Exit(1)
+                }</span>
+        }
+
+        // Data for templates
+        <span class="cov0" title="0">data := struct {
+                ProjectName string
+                Module      string
+        }{
+                ProjectName: name,
+                Module:      name,
+        }
+
+        // Create file generator
+        gen := generator.NewFileGenerator()
+
+        // Generate files
+        files := map[string]string{
+                "templates/go.mod.tmpl":    "go.mod",
+                "templates/main.go.tmpl":   "main.go",
+                "templates/README.md.tmpl": "README.md",
+                "templates/gitignore.tmpl": ".gitignore",
+                "templates/routes.go.tmpl": filepath.Join("internal", "routes", "routes.go"),
+        }
+
+        for tmplPath, filename := range files </span><span class="cov0" title="0">{
+                // Read template from embedded FS
+                tmplContent, err := foundry.Templates.ReadFile(tmplPath)
+                if err != nil </span><span class="cov0" title="0">{
+                        fmt.Printf("❌ Error reading template %s: %v\n", tmplPath, err)
+                        os.RemoveAll(name)
+                        os.Exit(1)
+                }</span>
+
+                <span class="cov0" title="0">outputPath := filepath.Join(name, filename)
+                if err := gen.Generate(outputPath, string(tmplContent), data); err != nil </span><span class="cov0" title="0">{
+                        fmt.Printf("❌ Error creating %s: %v\n", filename, err)
+                        os.RemoveAll(name)
+                        os.Exit(1)
+                }</span>
+        }
+
+        // Success message
+        <span class="cov0" title="0">fmt.Printf(`✅ Project created successfully!
+
+📁 Structure:
+  %s/
+  ├── main.go
+  ├── go.mod
+  ├── README.md
+  ├── .gitignore
+  └── internal/
+      ├── handlers/
+      ├── middleware/
+      └── routes/
+          └── routes.go
+
+🚀 Next steps:
+  cd %s
+  go mod tidy
+  go run .
+
+  # Test your API
+  curl http://localhost:8080/
+  curl http://localhost:8080/health
+
+📚 Available commands:
+  foundry add handler &lt;name&gt;
+  foundry add model &lt;name&gt;
+  foundry add middleware &lt;type&gt;
+  foundry add db &lt;type&gt;
+
+💡 Example workflow:
+  foundry add model user
+  foundry add handler user
+  foundry add middleware auth
+  foundry add db postgres
+`, name, name)</span>
+}
+</pre>
+		
+		<pre class="file" id="file6" style="display: none">package cmd
+
+import (
+        "github.com/spf13/cobra"
+)
+
+var version = "0.4.0"
+
+var rootCmd = &amp;cobra.Command{
+        Use:   "foundry",
+        Short: "Forge production-grade Go services faster",
+        Long: `Foundry is a developer-first Go scaffolding tool that helps you build REST APIs quickly.
+
+Start small. Build fast. Grow smart.`,
+        Version: version,
+}
+
+// Execute adds all child commands to the root command and sets flags appropriately.
+func Execute() error <span class="cov0" title="0">{
+        return rootCmd.Execute()
+}</span>
+
+func init() <span class="cov8" title="1">{
+        // Add commands
+        rootCmd.AddCommand(newCmd)
+        rootCmd.AddCommand(addCmd)
+        rootCmd.AddCommand(wireCmd)
+}</span>
+</pre>
+		
+		<pre class="file" id="file7" style="display: none">package cmd
+
+import (
+        "fmt"
+        "go/token"
+        "regexp"
+        "strings"
+        "unicode"
+)
+
+// Go reserved keywords that cannot be used as component names
+var goKeywords = map[string]bool{
+        "break": true, "case": true, "chan": true, "const": true, "continue": true,
+        "default": true, "defer": true, "else": true, "fallthrough": true, "for": true,
+        "func": true, "go": true, "goto": true, "if": true, "import": true,
+        "interface": true, "map": true, "package": true, "range": true, "return": true,
+        "select": true, "struct": true, "switch": true, "type": true, "var": true,
+}
+
+// Common invalid patterns for component names
+var invalidPatterns = []*regexp.Regexp{
+        regexp.MustCompile(`^\d`),            // Cannot start with number
+        regexp.MustCompile(`[^a-zA-Z0-9_-]`), // Only letters, numbers, underscore, hyphen
+        regexp.MustCompile(`--+`),            // Multiple consecutive hyphens
+        regexp.MustCompile(`__+`),            // Multiple consecutive underscores
+        regexp.MustCompile(`^-`),             // Cannot start with hyphen
+        regexp.MustCompile(`-$`),             // Cannot end with hyphen
+        regexp.MustCompile(`^_`),             // Cannot start with underscore
+        regexp.MustCompile(`_$`),             // Cannot end with underscore
+}
+
+// ValidateComponentName validates a component name according to Go and CLI conventions
+func ValidateComponentName(name string) error <span class="cov8" title="1">{
+        if name == "" </span><span class="cov8" title="1">{
+                return fmt.Errorf("component name cannot be empty")
+        }</span>
+
+        // Check length
+        <span class="cov8" title="1">if len(name) &gt; 50 </span><span class="cov8" title="1">{
+                return fmt.Errorf("component name too long (max 50 characters)")
+        }</span>
+
+        <span class="cov8" title="1">if len(name) &lt; 2 </span><span class="cov8" title="1">{
+                return fmt.Errorf("component name too short (min 2 characters)")
+        }</span>
+
+        // Check for spaces
+        <span class="cov8" title="1">if strings.Contains(name, " ") </span><span class="cov8" title="1">{
+                return fmt.Errorf("component name cannot contain spaces")
+        }</span>
+
+        // Check for tabs or other whitespace
+        <span class="cov8" title="1">for _, r := range name </span><span class="cov8" title="1">{
+                if unicode.IsSpace(r) </span><span class="cov8" title="1">{
+                        return fmt.Errorf("component name cannot contain whitespace characters")
+                }</span>
+        }
+
+        // Check Go reserved keywords
+        <span class="cov8" title="1">if goKeywords[strings.ToLower(name)] </span><span class="cov8" title="1">{
+                return fmt.Errorf("component name cannot be a Go reserved keyword: %s", name)
+        }</span>
+
+        // Check invalid patterns
+        <span class="cov8" title="1">for _, pattern := range invalidPatterns </span><span class="cov8" title="1">{
+                if pattern.MatchString(name) </span><span class="cov8" title="1">{
+                        switch pattern.String() </span>{
+                        case `^\d`:<span class="cov8" title="1">
+                                return fmt.Errorf("component name cannot start with a number")</span>
+                        case `[^a-zA-Z0-9_-]`:<span class="cov8" title="1">
+                                return fmt.Errorf("component name can only contain letters, numbers, underscores, and hyphens")</span>
+                        case `--+`:<span class="cov8" title="1">
+                                return fmt.Errorf("component name cannot contain consecutive hyphens")</span>
+                        case `__+`:<span class="cov8" title="1">
+                                return fmt.Errorf("component name cannot contain consecutive underscores")</span>
+                        case `^-`:<span class="cov8" title="1">
+                                return fmt.Errorf("component name cannot start with a hyphen")</span>
+                        case `-$`:<span class="cov8" title="1">
+                                return fmt.Errorf("component name cannot end with a hyphen")</span>
+                        case `^_`:<span class="cov8" title="1">
+                                return fmt.Errorf("component name cannot start with an underscore")</span>
+                        case `_$`:<span class="cov8" title="1">
+                                return fmt.Errorf("component name cannot end with an underscore")</span>
+                        }
+                }
+        }
+
+        // Check if it's a valid Go identifier when converted
+        <span class="cov8" title="1">goIdentifier := ToGoIdentifier(name)
+        if !token.IsIdentifier(goIdentifier) </span><span class="cov0" title="0">{
+                return fmt.Errorf("component name %q would not generate a valid Go identifier", name)
+        }</span>
+
+        // Check for common problematic names
+        <span class="cov8" title="1">problematicNames := map[string]string{
+                "test":    "conflicts with Go testing",
+                "main":    "conflicts with main package",
+                "init":    "conflicts with init function",
+                "new":     "conflicts with built-in new function",
+                "make":    "conflicts with built-in make function",
+                "len":     "conflicts with built-in len function",
+                "cap":     "conflicts with built-in cap function",
+                "append":  "conflicts with built-in append function",
+                "copy":    "conflicts with built-in copy function",
+                "delete":  "conflicts with built-in delete function",
+                "close":   "conflicts with built-in close function",
+                "panic":   "conflicts with built-in panic function",
+                "recover": "conflicts with built-in recover function",
+                "print":   "conflicts with built-in print function",
+                "println": "conflicts with built-in println function",
+                "error":   "conflicts with built-in error type",
+                "string":  "conflicts with built-in string type",
+                "int":     "conflicts with built-in int type",
+                "float64": "conflicts with built-in float64 type",
+                "bool":    "conflicts with built-in bool type",
+                "byte":    "conflicts with built-in byte type",
+                "rune":    "conflicts with built-in rune type",
+        }
+
+        if reason, exists := problematicNames[strings.ToLower(name)]; exists </span><span class="cov8" title="1">{
+                return fmt.Errorf("component name %q is not recommended: %s", name, reason)
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// ToGoIdentifier converts a component name to a valid Go identifier
+// This is used to check if the name will work in generated code
+func ToGoIdentifier(name string) string <span class="cov8" title="1">{
+        // Replace hyphens with underscores for Go compatibility
+        identifier := strings.ReplaceAll(name, "-", "_")
+
+        // Capitalize first letter for exported identifiers
+        if len(identifier) &gt; 0 </span><span class="cov8" title="1">{
+                identifier = strings.ToUpper(string(identifier[0])) + identifier[1:]
+        }</span>
+
+        <span class="cov8" title="1">return identifier</span>
+}
+
+// ValidateComponentType validates that the component type is supported
+func ValidateComponentType(componentType string) error <span class="cov8" title="1">{
+        validTypes := map[string]bool{
+                "handler":    true,
+                "model":      true,
+                "middleware": true,
+        }
+
+        if !validTypes[componentType] </span><span class="cov8" title="1">{
+                return fmt.Errorf("unsupported component type: %s (valid types: handler, model, middleware)", componentType)
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// ValidateAddCommandArgs validates arguments for the add command
+func ValidateAddCommandArgs(args []string) error <span class="cov8" title="1">{
+        if len(args) &lt; 2 </span><span class="cov8" title="1">{
+                return fmt.Errorf("add command requires component type and name")
+        }</span>
+
+        <span class="cov8" title="1">componentType := args[0]
+        componentName := args[1]
+
+        if err := ValidateComponentType(componentType); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+
+        <span class="cov8" title="1">if err := ValidateComponentName(componentName); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file8" style="display: none">package cmd
+
+import (
+        "github.com/spf13/cobra"
+)
+
+var wireCmd = &amp;cobra.Command{
+        Use:     "wire [resource]",
+        Aliases: []string{"w"},
+        Short:   "Wire components into your project",
+        Long: `Wire automatically connects components to your application.
+This includes updating imports, registering handlers, and applying middleware.`,
+        Example: `  foundry wire handler user
+  foundry wire middleware auth`,
+}
+
+func init() <span class="cov8" title="1">{
+        // Add subcommands
+        wireCmd.AddCommand(wireHandlerCmd)
+        wireCmd.AddCommand(wireMiddlewareCmd)
+
+        // NOTE: Wire command is added to root in root.go init()
+        // Removed duplicate: rootCmd.AddCommand(wireCmd)
+}</span>
+</pre>
+		
+		<pre class="file" id="file9" style="display: none">package cmd
+
+import (
+        "fmt"
+        "os"
+        "path/filepath"
+        "strings"
+
+        "github.com/shapestone/foundry/internal/project"
+        "github.com/shapestone/foundry/internal/utils"
+        "github.com/spf13/cobra"
+)
+
+var wireHandlerCmd = &amp;cobra.Command{
+        Use:   "handler [name]",
+        Short: "Wire an existing handler into routes",
+        Args:  cobra.ExactArgs(1),
+        Example: `  foundry wire handler user
+  foundry wire handler product`,
+        Run: func(cmd *cobra.Command, args []string) <span class="cov0" title="0">{
+                wireHandler(args[0])
+        }</span>,
+}
+
+func wireHandler(name string) <span class="cov0" title="0">{
+        // Check if we're in a Go project
+        if _, err := os.Stat("go.mod"); os.IsNotExist(err) </span><span class="cov0" title="0">{
+                fmt.Println("❌ Error: go.mod not found. Please run this command from your project root")
+                os.Exit(1)
+        }</span>
+
+        // Convert name to different cases
+        <span class="cov0" title="0">resourceName := strings.ToLower(name)
+        resourcePath := strings.ToLower(name) + "s" // simple pluralization
+
+        // Check if handler exists
+        handlerPath := filepath.Join("internal", "handlers", fmt.Sprintf("%s.go", resourceName))
+        if _, err := os.Stat(handlerPath); os.IsNotExist(err) </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error: handler %s not found at %s\n", name, handlerPath)
+                fmt.Println("💡 Did you mean to run: foundry add handler " + name)
+                os.Exit(1)
+        }</span>
+
+        // Check if routes file exists
+        <span class="cov0" title="0">routesPath := filepath.Join("internal", "routes", "routes.go")
+        if _, err := os.Stat(routesPath); os.IsNotExist(err) </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error: routes.go not found at %s\n", routesPath)
+                os.Exit(1)
+        }</span>
+
+        <span class="cov0" title="0">fmt.Printf("🔌 Wiring handler: %s\n", name)
+
+        // Update routes file
+        if err := utils.UpdateRoutesFile(name, false); err != nil </span><span class="cov0" title="0">{
+                if err.Error() == "update cancelled by user" </span><span class="cov0" title="0">{
+                        // User cancelled - this is not an error, exit gracefully
+                        fmt.Println("ℹ️  Wire operation cancelled")
+                        return
+                }</span>
+                <span class="cov0" title="0">fmt.Printf("❌ Error wiring handler: %v\n", err)
+                os.Exit(1)</span>
+        }
+
+        // Success message
+        <span class="cov0" title="0">moduleName := project.GetCurrentModule()
+        fmt.Printf(`✅ Handler wired successfully!
+
+📝 Routes updated:
+  internal/routes/routes.go
+
+🚀 Available endpoints:
+  GET    /api/v1/%s       - List all %s
+  POST   /api/v1/%s       - Create new %s
+  GET    /api/v1/%s/{id}  - Get by ID
+  PUT    /api/v1/%s/{id}  - Update by ID
+  DELETE /api/v1/%s/{id}  - Delete by ID
+
+💡 Next steps:
+  - Ensure your handler is imported: import "%s/internal/handlers"
+  - Test your endpoints: curl http://localhost:8080/api/v1/%s
+`, resourcePath, resourcePath,
+                resourcePath, resourceName,
+                resourcePath,
+                resourcePath,
+                resourcePath,
+                moduleName, resourcePath)</span>
+}
+</pre>
+		
+		<pre class="file" id="file10" style="display: none">package cmd
+
+import (
+        "fmt"
+        "os"
+        "path/filepath"
+
+        "github.com/spf13/cobra"
+)
+
+var wireMiddlewareCmd = &amp;cobra.Command{
+        Use:   "middleware [type]",
+        Short: "Wire existing middleware into your application",
+        Args:  cobra.ExactArgs(1),
+        Example: `  foundry wire middleware auth
+  foundry wire middleware cors
+  foundry wire middleware ratelimit`,
+        Run: func(cmd *cobra.Command, args []string) <span class="cov0" title="0">{
+                wireMiddleware(args[0])
+        }</span>,
+}
+
+func wireMiddleware(middlewareType string) <span class="cov0" title="0">{
+        // Check if we're in a Go project
+        if _, err := os.Stat("go.mod"); os.IsNotExist(err) </span><span class="cov0" title="0">{
+                fmt.Println("❌ Error: go.mod not found. Please run this command from your project root")
+                os.Exit(1)
+        }</span>
+
+        // Validate middleware type
+        <span class="cov0" title="0">description, ok := supportedMiddleware[middlewareType]
+        if !ok </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error: unsupported middleware type '%s'\n", middlewareType)
+                fmt.Println("Supported types:")
+                for t, d := range supportedMiddleware </span><span class="cov0" title="0">{
+                        fmt.Printf("  - %s: %s\n", t, d)
+                }</span>
+                <span class="cov0" title="0">os.Exit(1)</span>
+        }
+
+        // Check if middleware exists
+        <span class="cov0" title="0">middlewarePath := filepath.Join("internal", "middleware", fmt.Sprintf("%s.go", middlewareType))
+        if _, err := os.Stat(middlewarePath); os.IsNotExist(err) </span><span class="cov0" title="0">{
+                fmt.Printf("❌ Error: middleware %s not found at %s\n", middlewareType, middlewarePath)
+                fmt.Println("💡 Did you mean to run: foundry add middleware " + middlewareType)
+                os.Exit(1)
+        }</span>
+
+        <span class="cov0" title="0">fmt.Printf("🔌 Wiring middleware: %s\n", middlewareType)
+
+        // For now, show manual instructions (auto-wiring to be implemented)
+        fmt.Printf(`⚠️  Auto-wiring for middleware is coming soon!
+
+For now, here's how to wire %s middleware:
+`, middlewareType)
+
+        // Show the same instructions as in middleware.go
+        // The fourth parameter is likely a boolean for "isNew" based on the context
+        // Since we're wiring existing middleware, we pass false
+        showMiddlewareSuccess(middlewareType, middlewarePath, description, false)</span>
+}
+</pre>
+		
+		<pre class="file" id="file11" style="display: none">package generator
+
+import (
+        "fmt"
+        "os"
+        "path/filepath"
+        "strings"
+)
+
+// ComponentData holds template data for component generation
+type ComponentData struct {
+        HandlerName        string
+        ModelName          string
+        MiddlewareName     string
+        ResourceName       string
+        ResourceNamePlural string
+        ResourcePath       string
+
+        // Model-specific fields
+        IncludeNameField        bool
+        IncludeEmailField       bool
+        IncludeTitleField       bool
+        IncludeDescriptionField bool
+}
+
+// CreateHandler creates a new handler file
+func CreateHandler(name string) error <span class="cov8" title="1">{
+        generator := NewFileGenerator()
+
+        // Load template from file system using absolute path
+        projectRoot, err := findProjectRoot()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("finding project root: %w", err)
+        }</span>
+        <span class="cov8" title="1">tmplPath := filepath.Join(projectRoot, "templates", "handler.go.tmpl")
+        tmplContent, err := os.ReadFile(tmplPath)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("reading handler template: %w", err)
+        }</span>
+
+        // Prepare template data
+        <span class="cov8" title="1">data := &amp;ComponentData{
+                HandlerName:        toGoIdentifier(name),
+                ResourceName:       strings.ToLower(name),
+                ResourceNamePlural: pluralize(strings.ToLower(name)),
+                ResourcePath:       strings.ToLower(name),
+        }
+
+        // Generate file path
+        fileName := strings.ToLower(name) + ".go"
+        filePath := filepath.Join("internal", "handlers", fileName)
+
+        // Generate file
+        return generator.Generate(filePath, string(tmplContent), data)</span>
+}
+
+// CreateModel creates a new model file
+func CreateModel(name string) error <span class="cov8" title="1">{
+        generator := NewFileGenerator()
+
+        // Load template from file system using absolute path
+        projectRoot, err := findProjectRoot()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("finding project root: %w", err)
+        }</span>
+        <span class="cov8" title="1">tmplPath := filepath.Join(projectRoot, "templates", "model.go.tmpl")
+        tmplContent, err := os.ReadFile(tmplPath)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("reading model template: %w", err)
+        }</span>
+
+        // Prepare template data with default fields based on common names
+        <span class="cov8" title="1">data := &amp;ComponentData{
+                ModelName:               toGoIdentifier(name),
+                ResourceName:            strings.ToLower(name),
+                IncludeNameField:        isCommonNameField(name),
+                IncludeEmailField:       isUserLikeModel(name),
+                IncludeTitleField:       isContentLikeModel(name),
+                IncludeDescriptionField: isContentLikeModel(name),
+        }
+
+        // Generate file path
+        fileName := strings.ToLower(name) + ".go"
+        filePath := filepath.Join("internal", "models", fileName)
+
+        // Generate file
+        return generator.Generate(filePath, string(tmplContent), data)</span>
+}
+
+// CreateMiddleware creates a new middleware file
+func CreateMiddleware(name string) error <span class="cov8" title="1">{
+        generator := NewFileGenerator()
+
+        // Create a simple middleware template
+        middlewareTemplate := `package middleware
+
+import (
+        "net/http"
+)
+
+// {{ .MiddlewareName }}Middleware provides {{ .ResourceName }} functionality
+func {{ .MiddlewareName }}Middleware(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                // TODO: Implement {{ .ResourceName }} middleware logic
+                
+                // Call the next handler
+                next.ServeHTTP(w, r)
+        })
+}
+
+// {{ .MiddlewareName }}MiddlewareFunc provides {{ .ResourceName }} functionality as HandlerFunc
+func {{ .MiddlewareName }}MiddlewareFunc(next http.HandlerFunc) http.HandlerFunc {
+        return func(w http.ResponseWriter, r *http.Request) {
+                // TODO: Implement {{ .ResourceName }} middleware logic
+                
+                // Call the next handler
+                next(w, r)
+        }
+}`
+
+        // Prepare template data
+        data := &amp;ComponentData{
+                MiddlewareName: toGoIdentifier(name),
+                ResourceName:   strings.ToLower(name),
+        }
+
+        // Generate file path
+        fileName := strings.ToLower(name) + ".go"
+        filePath := filepath.Join("internal", "middleware", fileName)
+
+        // Generate file
+        return generator.Generate(filePath, middlewareTemplate, data)
+}</span>
+
+// Helper functions
+
+// toGoIdentifier converts a string to a valid Go identifier
+func toGoIdentifier(s string) string <span class="cov8" title="1">{
+        // Remove hyphens and underscores, capitalize each word
+        parts := strings.FieldsFunc(s, func(r rune) bool </span><span class="cov8" title="1">{
+                return r == '-' || r == '_'
+        }</span>)
+
+        <span class="cov8" title="1">var result strings.Builder
+        for _, part := range parts </span><span class="cov8" title="1">{
+                if len(part) &gt; 0 </span><span class="cov8" title="1">{
+                        result.WriteString(strings.ToUpper(part[:1]))
+                        if len(part) &gt; 1 </span><span class="cov8" title="1">{
+                                result.WriteString(strings.ToLower(part[1:]))
+                        }</span>
+                }
+        }
+
+        <span class="cov8" title="1">return result.String()</span>
+}
+
+// pluralize adds simple pluralization
+func pluralize(s string) string <span class="cov8" title="1">{
+        if strings.HasSuffix(s, "y") </span><span class="cov0" title="0">{
+                return s[:len(s)-1] + "ies"
+        }</span>
+        <span class="cov8" title="1">if strings.HasSuffix(s, "s") || strings.HasSuffix(s, "x") || strings.HasSuffix(s, "z") ||
+                strings.HasSuffix(s, "ch") || strings.HasSuffix(s, "sh") </span><span class="cov0" title="0">{
+                return s + "es"
+        }</span>
+        <span class="cov8" title="1">return s + "s"</span>
+}
+
+// isCommonNameField determines if a model should include a name field
+func isCommonNameField(name string) bool <span class="cov8" title="1">{
+        commonNameModels := []string{"user", "product", "category", "team", "organization", "company"}
+        lowerName := strings.ToLower(name)
+        for _, model := range commonNameModels </span><span class="cov8" title="1">{
+                if lowerName == model </span><span class="cov0" title="0">{
+                        return true
+                }</span>
+        }
+        <span class="cov8" title="1">return false</span>
+}
+
+// isUserLikeModel determines if a model should include email field
+func isUserLikeModel(name string) bool <span class="cov8" title="1">{
+        userLikeModels := []string{"user", "account", "customer", "member"}
+        lowerName := strings.ToLower(name)
+        for _, model := range userLikeModels </span><span class="cov8" title="1">{
+                if lowerName == model </span><span class="cov0" title="0">{
+                        return true
+                }</span>
+        }
+        <span class="cov8" title="1">return false</span>
+}
+
+// isContentLikeModel determines if a model should include title/description fields
+func isContentLikeModel(name string) bool <span class="cov8" title="1">{
+        contentLikeModels := []string{"post", "article", "product", "project", "task", "issue"}
+        lowerName := strings.ToLower(name)
+        for _, model := range contentLikeModels </span><span class="cov8" title="1">{
+                if lowerName == model </span><span class="cov0" title="0">{
+                        return true
+                }</span>
+        }
+        <span class="cov8" title="1">return false</span>
+}
+
+// findProjectRoot finds the project root directory by looking for go.mod
+func findProjectRoot() (string, error) <span class="cov8" title="1">{
+        dir, err := os.Getwd()
+        if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+
+        // Look for go.mod file going up the directory tree
+        <span class="cov8" title="1">for </span><span class="cov8" title="1">{
+                goModPath := filepath.Join(dir, "go.mod")
+                if _, err := os.Stat(goModPath); err == nil </span><span class="cov8" title="1">{
+                        return dir, nil
+                }</span>
+
+                <span class="cov8" title="1">parent := filepath.Dir(dir)
+                if parent == dir </span><span class="cov0" title="0">{
+                        // Reached root directory
+                        break</span>
+                }
+                <span class="cov8" title="1">dir = parent</span>
+        }
+
+        <span class="cov0" title="0">return "", fmt.Errorf("could not find project root (no go.mod found)")</span>
+}
+</pre>
+		
+		<pre class="file" id="file12" style="display: none">package generator
+
+import (
+        "fmt"
+        "os"
+        "path/filepath"
+        "text/template"
+)
+
+// Generator handles file generation from templates
+type Generator interface {
+        Generate(path string, tmplContent string, data interface{}) error
+}
+
+// FileGenerator implements the Generator interface for file system operations
+type FileGenerator struct{}
+
+// NewFileGenerator creates a new file generator
+func NewFileGenerator() *FileGenerator <span class="cov8" title="1">{
+        return &amp;FileGenerator{}
+}</span>
+
+// Generate creates a file from a template
+func (g *FileGenerator) Generate(path string, tmplContent string, data interface{}) error <span class="cov8" title="1">{
+        // Ensure directory exists
+        dir := filepath.Dir(path)
+        if err := os.MkdirAll(dir, 0755); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("creating directory %s: %w", dir, err)
+        }</span>
+
+        // Parse template
+        <span class="cov8" title="1">tmpl, err := template.New(filepath.Base(path)).Parse(tmplContent)
+        if err != nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("parsing template: %w", err)
+        }</span>
+
+        // Create file
+        <span class="cov8" title="1">file, err := os.Create(path)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("creating file %s: %w", path, err)
+        }</span>
+        <span class="cov8" title="1">defer file.Close()
+
+        // Execute template
+        if err := tmpl.Execute(file, data); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("executing template: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file13" style="display: none">package interactive
+
+import (
+        "bufio"
+        "fmt"
+        "io"
+        "os"
+        "strings"
+)
+
+// ANSI color codes
+const (
+        ColorReset  = "\033[0m"
+        ColorRed    = "\033[31m"
+        ColorGreen  = "\033[32m"
+        ColorYellow = "\033[33m"
+        ColorBlue   = "\033[34m"
+        ColorPurple = "\033[35m"
+        ColorCyan   = "\033[36m"
+        ColorWhite  = "\033[37m"
+)
+
+// Prompter handles user interaction
+type Prompter interface {
+        Confirm(message string) bool
+        ShowPreview(title string, changes []string, message string) bool
+}
+
+// ConsolePrompter implements Prompter for console interaction
+type ConsolePrompter struct {
+        input  io.Reader
+        output io.Writer
+}
+
+// NewConsolePrompter creates a new console prompter
+func NewConsolePrompter() *ConsolePrompter <span class="cov8" title="1">{
+        return &amp;ConsolePrompter{
+                input:  os.Stdin,
+                output: os.Stdout,
+        }
+}</span>
+
+// NewConsolePrompterWithIO creates a new console prompter with custom input/output
+// This is useful for testing
+func NewConsolePrompterWithIO(input io.Reader, output io.Writer) *ConsolePrompter <span class="cov8" title="1">{
+        return &amp;ConsolePrompter{
+                input:  input,
+                output: output,
+        }
+}</span>
+
+// Confirm asks the user for confirmation
+func (p *ConsolePrompter) Confirm(message string) bool <span class="cov8" title="1">{
+        scanner := bufio.NewScanner(p.input)
+
+        for </span><span class="cov8" title="1">{
+                fmt.Fprintf(p.output, "%s (y/N): ", message)
+
+                if !scanner.Scan() </span><span class="cov8" title="1">{
+                        // Handle EOF or error
+                        return false
+                }</span>
+
+                <span class="cov8" title="1">response := strings.TrimSpace(strings.ToLower(scanner.Text()))
+
+                switch response </span>{
+                case "y", "yes":<span class="cov8" title="1">
+                        return true</span>
+                case "n", "no", "":<span class="cov8" title="1">
+                        return false</span>
+                default:<span class="cov8" title="1">
+                        fmt.Fprintf(p.output, "Please enter 'y' for yes or 'n' for no.\n")
+                        continue</span>
+                }
+        }
+}
+
+// ShowPreview shows a preview of changes and asks for confirmation
+func (p *ConsolePrompter) ShowPreview(title string, changes []string, message string) bool <span class="cov8" title="1">{
+        if len(changes) == 0 </span><span class="cov8" title="1">{
+                fmt.Fprintf(p.output, "\n📝 %s\n", "No changes")
+                if message != "" </span><span class="cov8" title="1">{
+                        return p.Confirm(message)
+                }</span>
+                <span class="cov8" title="1">return p.Confirm("Continue?")</span>
+        }
+
+        <span class="cov8" title="1">fmt.Fprintf(p.output, "\n📝 %s\n", title)
+        fmt.Fprintf(p.output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+        for _, change := range changes </span><span class="cov8" title="1">{
+                coloredChange := p.colorizeChange(change)
+                fmt.Fprintf(p.output, "  %s\n", coloredChange)
+        }</span>
+
+        <span class="cov8" title="1">fmt.Fprintf(p.output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+        if message == "" </span><span class="cov8" title="1">{
+                message = "Apply these changes?"
+        }</span>
+
+        <span class="cov8" title="1">return p.Confirm(fmt.Sprintf("\n❓ %s", message))</span>
+}
+
+// colorizeChange applies color formatting to changes based on their prefix
+func (p *ConsolePrompter) colorizeChange(change string) string <span class="cov8" title="1">{
+        change = strings.TrimSpace(change)
+
+        if strings.HasPrefix(change, "+") </span><span class="cov8" title="1">{
+                // Green for additions
+                return fmt.Sprintf("%s%s%s", ColorGreen, change, ColorReset)
+        }</span> else<span class="cov8" title="1"> if strings.HasPrefix(change, "-") </span><span class="cov8" title="1">{
+                // Red for deletions
+                return fmt.Sprintf("%s%s%s", ColorRed, change, ColorReset)
+        }</span> else<span class="cov8" title="1"> if strings.HasPrefix(change, "~") || strings.HasPrefix(change, "M") </span><span class="cov8" title="1">{
+                // Yellow for modifications
+                return fmt.Sprintf("%s%s%s", ColorYellow, change, ColorReset)
+        }</span>
+
+        // Default color for other lines
+        <span class="cov8" title="1">return change</span>
+}
+
+// IsColorSupported checks if the current terminal supports color output
+func IsColorSupported() bool <span class="cov8" title="1">{
+        term := os.Getenv("TERM")
+        if term == "" </span><span class="cov0" title="0">{
+                return false
+        }</span>
+
+        // Check for common terminals that support color
+        <span class="cov8" title="1">colorTerms := []string{"xterm", "xterm-256color", "screen", "tmux", "vt100"}
+        for _, colorTerm := range colorTerms </span><span class="cov8" title="1">{
+                if strings.Contains(term, colorTerm) </span><span class="cov8" title="1">{
+                        return true
+                }</span>
+        }
+
+        // Check for explicit color support environment variables
+        <span class="cov0" title="0">if os.Getenv("COLORTERM") != "" </span><span class="cov0" title="0">{
+                return true
+        }</span>
+
+        <span class="cov0" title="0">return false</span>
+}
+
+// Helper function to strip ANSI color codes (useful for testing)
+func StripAnsiCodes(s string) string <span class="cov8" title="1">{
+        // Simple regex-like replacement for ANSI escape sequences
+        result := s
+        ansiCodes := []string{
+                ColorReset, ColorRed, ColorGreen, ColorYellow,
+                ColorBlue, ColorPurple, ColorCyan, ColorWhite,
+        }
+
+        for _, code := range ansiCodes </span><span class="cov8" title="1">{
+                result = strings.ReplaceAll(result, code, "")
+        }</span>
+
+        <span class="cov8" title="1">return result</span>
+}
+</pre>
+		
+		<pre class="file" id="file14" style="display: none">package project
+
+import (
+        "fmt"
+        "os"
+        "strings"
+)
+
+// ModuleReader reads module information from go.mod
+type ModuleReader interface {
+        GetModuleName() (string, error)
+}
+
+// GoModReader implements ModuleReader for go.mod files
+type GoModReader struct{}
+
+// NewGoModReader creates a new go.mod reader
+func NewGoModReader() *GoModReader <span class="cov8" title="1">{
+        return &amp;GoModReader{}
+}</span>
+
+// GetModuleName reads the module name from go.mod
+func (r *GoModReader) GetModuleName() (string, error) <span class="cov8" title="1">{
+        content, err := os.ReadFile("go.mod")
+        if err != nil </span><span class="cov8" title="1">{
+                return "", fmt.Errorf("reading go.mod: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">lines := strings.Split(string(content), "\n")
+        for _, line := range lines </span><span class="cov8" title="1">{
+                line = strings.TrimSpace(line)
+                if strings.HasPrefix(line, "module ") </span><span class="cov8" title="1">{
+                        return strings.TrimSpace(strings.TrimPrefix(line, "module ")), nil
+                }</span>
+        }
+
+        <span class="cov8" title="1">return "", fmt.Errorf("module declaration not found in go.mod")</span>
+}
+
+// GetCurrentModule is a convenience function that returns the current module name
+// or a default value if an error occurs
+func GetCurrentModule() string <span class="cov8" title="1">{
+        reader := NewGoModReader()
+        module, err := reader.GetModuleName()
+        if err != nil </span><span class="cov8" title="1">{
+                return "yourmodule"
+        }</span>
+        <span class="cov8" title="1">return module</span>
+}
+</pre>
+		
+		<pre class="file" id="file15" style="display: none">package project
+
+import (
+        "os"
+        "path/filepath"
+        "strings"
+)
+
+// GetProjectName returns the project name from the current directory or module
+func GetProjectName() string <span class="cov8" title="1">{
+        // First try to get from current directory name
+        cwd, err := os.Getwd()
+        if err == nil </span><span class="cov8" title="1">{
+                projectName := filepath.Base(cwd)
+                if projectName != "" &amp;&amp; projectName != "." &amp;&amp; projectName != "/" </span><span class="cov8" title="1">{
+                        return projectName
+                }</span>
+        }
+
+        // Fall back to module name
+        <span class="cov0" title="0">module := GetCurrentModule()
+        parts := strings.Split(module, "/")
+        if len(parts) &gt; 0 </span><span class="cov0" title="0">{
+                return parts[len(parts)-1]
+        }</span>
+
+        <span class="cov0" title="0">return "myapp"</span>
+}
+</pre>
+		
+		<pre class="file" id="file16" style="display: none">package routes
+
+import (
+        "fmt"
+        "os"
+        "os/exec"
+        "path/filepath"
+        "strings"
+)
+
+// Update represents a file modification
+type Update struct {
+        Path     string
+        Original []byte
+        Modified []byte
+        Changes  []string
+}
+
+// Updater handles route file updates
+type Updater interface {
+        UpdateRoutes(handlerName string, moduleName string) (*Update, error)
+        ValidateGoFile(path string) error
+}
+
+// FileUpdater implements Updater for file system operations
+type FileUpdater struct{}
+
+// NewFileUpdater creates a new file updater
+func NewFileUpdater() *FileUpdater <span class="cov8" title="1">{
+        return &amp;FileUpdater{}
+}</span>
+
+// UpdateRoutes calculates the changes needed to add a handler to routes.go
+func (u *FileUpdater) UpdateRoutes(handlerName string, moduleName string) (*Update, error) <span class="cov8" title="1">{
+        routesPath := filepath.Join("internal", "routes", "routes.go")
+
+        // Read current file
+        original, err := os.ReadFile(routesPath)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("reading routes.go: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">modified := string(original)
+        changes := []string{}
+
+        // Add import if needed
+        importLine := fmt.Sprintf(`"%s/internal/handlers"`, moduleName)
+        if !strings.Contains(modified, importLine) </span><span class="cov8" title="1">{
+                modified = strings.Replace(
+                        modified,
+                        "import (",
+                        fmt.Sprintf("import (\n\t%s", importLine),
+                        1,
+                )
+                changes = append(changes, fmt.Sprintf("Add import: %s", importLine))
+        }</span>
+
+        // Add handler registration
+        <span class="cov8" title="1">handlerCode := fmt.Sprintf(
+                "\n\t// %s routes\n\t%sHandler := handlers.New%sHandler()\n\tr.Mount(\"/%ss\", %sHandler.Routes())",
+                strings.Title(handlerName),
+                handlerName,
+                strings.Title(handlerName),
+                handlerName,
+                handlerName,
+        )
+
+        // Find the right place to insert the handler
+        lines := strings.Split(modified, "\n")
+        inserted := false
+        for i := len(lines) - 1; i &gt;= 0; i-- </span><span class="cov8" title="1">{
+                if strings.Contains(lines[i], "func RegisterAPIRoutes") </span><span class="cov8" title="1">{
+                        // Find the closing brace of the function
+                        braceCount := 0
+                        for j := i; j &lt; len(lines); j++ </span><span class="cov8" title="1">{
+                                for _, char := range lines[j] </span><span class="cov8" title="1">{
+                                        if char == '{' </span><span class="cov8" title="1">{
+                                                braceCount++
+                                        }</span> else<span class="cov8" title="1"> if char == '}' </span><span class="cov8" title="1">{
+                                                braceCount--
+                                                if braceCount == 0 </span><span class="cov8" title="1">{
+                                                        // Insert before the closing brace
+                                                        lines[j] = handlerCode + "\n" + lines[j]
+                                                        changes = append(changes, fmt.Sprintf("Add %s handler registration", handlerName))
+                                                        inserted = true
+                                                        break</span>
+                                                }
+                                        }
+                                }
+                                <span class="cov8" title="1">if inserted </span><span class="cov8" title="1">{
+                                        break</span>
+                                }
+                        }
+                        <span class="cov8" title="1">break</span>
+                }
+        }
+
+        <span class="cov8" title="1">if !inserted </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("could not find appropriate location to insert handler")
+        }</span>
+
+        <span class="cov8" title="1">modified = strings.Join(lines, "\n")
+
+        return &amp;Update{
+                Path:     routesPath,
+                Original: original,
+                Modified: []byte(modified),
+                Changes:  changes,
+        }, nil</span>
+}
+
+// ValidateGoFile validates Go syntax using gofmt
+func (u *FileUpdater) ValidateGoFile(path string) error <span class="cov8" title="1">{
+        cmd := exec.Command("gofmt", "-e", path)
+        if output, err := cmd.CombinedOutput(); err != nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("invalid Go syntax: %s", output)
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+
+// ApplyUpdate applies a file update with rollback support
+func ApplyUpdate(update *Update, validator Updater) error <span class="cov8" title="1">{
+        // Create backup
+        backupPath := update.Path + ".backup"
+        if err := os.WriteFile(backupPath, update.Original, 0644); err != nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("creating backup: %w", err)
+        }</span>
+
+        // Cleanup function
+        <span class="cov8" title="1">cleanup := func(success bool) </span><span class="cov8" title="1">{
+                if success </span><span class="cov8" title="1">{
+                        os.Remove(backupPath)
+                }</span> else<span class="cov8" title="1"> {
+                        // Restore from backup
+                        os.WriteFile(update.Path, update.Original, 0644)
+                        os.Remove(backupPath)
+                }</span>
+        }
+
+        // Write new content
+        <span class="cov8" title="1">if err := os.WriteFile(update.Path, update.Modified, 0644); err != nil </span><span class="cov0" title="0">{
+                cleanup(false)
+                return fmt.Errorf("writing file: %w", err)
+        }</span>
+
+        // Validate syntax
+        <span class="cov8" title="1">if err := validator.ValidateGoFile(update.Path); err != nil </span><span class="cov8" title="1">{
+                cleanup(false)
+                return err
+        }</span>
+
+        <span class="cov8" title="1">cleanup(true)
+        return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file17" style="display: none">package utils
+
+import (
+        "fmt"
+        "github.com/shapestone/foundry/internal/interactive"
+        "github.com/shapestone/foundry/internal/project"
+        "github.com/shapestone/foundry/internal/routes"
+)
+
+// FileUpdate represents a file modification
+// Deprecated: Use routes.Update instead
+type FileUpdate = routes.Update
+
+// UpdateRoutesFile safely updates the routes file with preview and rollback
+func UpdateRoutesFile(handlerName string, dryRun bool) error <span class="cov8" title="1">{
+        updater := routes.NewFileUpdater()
+        prompter := interactive.NewConsolePrompter()
+        moduleName := project.GetCurrentModule()
+
+        // Calculate changes
+        update, err := updater.UpdateRoutes(handlerName, moduleName)
+        if err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+
+        // Show preview
+        <span class="cov0" title="0">message := fmt.Sprintf("This will add the %s handler to your routes", handlerName)
+        if !prompter.ShowPreview(fmt.Sprintf("Preview changes to %s:", update.Path), update.Changes, message) </span><span class="cov0" title="0">{
+                return fmt.Errorf("update cancelled by user")
+        }</span>
+
+        <span class="cov0" title="0">if dryRun </span><span class="cov0" title="0">{
+                fmt.Println("🔍 Dry run complete - no changes made")
+                return nil
+        }</span>
+
+        // Apply with rollback protection
+        <span class="cov0" title="0">return routes.ApplyUpdate(update, updater)</span>
+}
+
+// calculateRoutesUpdate calculates the routes update
+// Deprecated: Use routes.FileUpdater.UpdateRoutes instead
+func calculateRoutesUpdate(content, handlerName string) *FileUpdate <span class="cov0" title="0">{
+        // This function is now internal to the routes package
+        // Keeping for backward compatibility if needed
+        panic("calculateRoutesUpdate is deprecated, use routes.FileUpdater.UpdateRoutes")</span>
+}
+
+// showUpdatePreview shows update preview
+// Deprecated: Use interactive.ConsolePrompter.ShowPreview instead
+func showUpdatePreview(update *FileUpdate, handlerName string) bool <span class="cov0" title="0">{
+        prompter := interactive.NewConsolePrompter()
+        message := fmt.Sprintf("This will add the %s handler to your routes", handlerName)
+        return prompter.ShowPreview(fmt.Sprintf("Preview changes to %s:", update.Path), update.Changes, message)
+}</span>
+
+// applyFileUpdate applies file update
+// Deprecated: Use routes.ApplyUpdate instead
+func applyFileUpdate(update *FileUpdate) error <span class="cov0" title="0">{
+        updater := routes.NewFileUpdater()
+        return routes.ApplyUpdate(update, updater)
+}</span>
+
+// validateGoFile validates Go file syntax
+// Deprecated: Use routes.FileUpdater.ValidateGoFile instead
+func validateGoFile(path string) error <span class="cov0" title="0">{
+        updater := routes.NewFileUpdater()
+        return updater.ValidateGoFile(path)
+}</span>
+</pre>
+		
+		<pre class="file" id="file18" style="display: none">package utils
+
+import (
+        "fmt"
+        "github.com/shapestone/foundry/internal/generator"
+        "github.com/shapestone/foundry/internal/project"
+)
+
+// GenerateFile creates a file from a template
+// Deprecated: Use generator.FileGenerator instead
+func GenerateFile(tmplContent, path string, data interface{}) error <span class="cov8" title="1">{
+        // Add validation to prevent empty path issues
+        if path == "" </span><span class="cov8" title="1">{
+                return fmt.Errorf("file path cannot be empty")
+        }</span>
+
+        <span class="cov8" title="1">gen := generator.NewFileGenerator()
+        return gen.Generate(path, tmplContent, data)</span>
+}
+
+// GetCurrentModule reads the module name from go.mod
+// Deprecated: Use project.GetCurrentModule instead
+func GetCurrentModule() string <span class="cov8" title="1">{
+        return project.GetCurrentModule()
+}</span>
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

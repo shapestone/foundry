@@ -1,0 +1,95 @@
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+)
+
+// {{ .HandlerName }}Handler handles all {{ .ResourceName }} related requests
+type {{ .HandlerName }}Handler struct {
+	// Add dependencies here (e.g., database, services)
+}
+
+// New{{ .HandlerName }}Handler creates a new {{ .ResourceName }} handler
+func New{{ .HandlerName }}Handler() *{{ .HandlerName }}Handler {
+	return &{{ .HandlerName }}Handler{}
+}
+
+// Routes registers all {{ .ResourceName }} routes
+func (h *{{ .HandlerName }}Handler) Routes() chi.Router {
+	r := chi.NewRouter()
+
+	r.Get("/", h.List)         // GET /{{ .ResourcePath }}
+	r.Post("/", h.Create)      // POST /{{ .ResourcePath }}
+	r.Get("/{id}", h.Get)      // GET /{{ .ResourcePath }}/{id}
+	r.Put("/{id}", h.Update)   // PUT /{{ .ResourcePath }}/{id}
+	r.Delete("/{id}", h.Delete) // DELETE /{{ .ResourcePath }}/{id}
+
+	return r
+}
+
+// List returns all {{ .ResourceNamePlural }}
+func (h *{{ .HandlerName }}Handler) List(w http.ResponseWriter, r *http.Request) {
+	response := map[string]interface{}{
+		"message": "List all {{ .ResourceNamePlural }}",
+		"data":    []interface{}{},
+		"timestamp": time.Now().Unix(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// Create creates a new {{ .ResourceName }}
+func (h *{{ .HandlerName }}Handler) Create(w http.ResponseWriter, r *http.Request) {
+	response := map[string]interface{}{
+		"message": "Create a new {{ .ResourceName }}",
+		"timestamp": time.Now().Unix(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response)
+}
+
+// Get returns a single {{ .ResourceName }} by ID
+func (h *{{ .HandlerName }}Handler) Get(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	response := map[string]interface{}{
+		"message": "Get {{ .ResourceName }} by ID",
+		"id":      id,
+		"timestamp": time.Now().Unix(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// Update updates a {{ .ResourceName }} by ID
+func (h *{{ .HandlerName }}Handler) Update(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	response := map[string]interface{}{
+		"message": "Update {{ .ResourceName }} by ID",
+		"id":      id,
+		"timestamp": time.Now().Unix(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// Delete deletes a {{ .ResourceName }} by ID
+func (h *{{ .HandlerName }}Handler) Delete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	// For DELETE, we typically return 204 No Content
+	// Log the deletion if needed
+	_ = id // Use the id variable
+
+	w.WriteHeader(http.StatusNoContent)
+}

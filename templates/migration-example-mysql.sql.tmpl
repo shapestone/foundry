@@ -1,0 +1,57 @@
+-- Migration: 001_initial_schema
+-- Description: Initial database schema for {{ .ProjectName }}
+-- Created: {{ .CreatedAt }}
+
+-- Create users table
+CREATE TABLE IF NOT EXISTS users (
+    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    full_name VARCHAR(255),
+    is_active BOOLEAN DEFAULT TRUE,
+    is_verified BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL,
+    INDEX idx_email (email),
+    INDEX idx_username (username),
+    INDEX idx_created_at (created_at),
+    INDEX idx_deleted_at (deleted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Create sessions table (if using session-based auth)
+CREATE TABLE IF NOT EXISTS sessions (
+    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    user_id CHAR(36) NOT NULL,
+    token VARCHAR(255) UNIQUE NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_token (token),
+    INDEX idx_user_id (user_id),
+    INDEX idx_expires_at (expires_at),
+    CONSTRAINT fk_sessions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Create audit log table
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id CHAR(36),
+    action VARCHAR(100) NOT NULL,
+    entity_type VARCHAR(50),
+    entity_id VARCHAR(36),
+    old_values JSON,
+    new_values JSON,
+    ip_address VARCHAR(45),
+    user_agent VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_id (user_id),
+    INDEX idx_entity (entity_type, entity_id),
+    INDEX idx_created_at (created_at),
+    CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Add table comments
+ALTER TABLE users COMMENT = 'User accounts';
+ALTER TABLE sessions COMMENT = 'User authentication sessions';
+ALTER TABLE audit_logs COMMENT = 'Audit trail of user actions';

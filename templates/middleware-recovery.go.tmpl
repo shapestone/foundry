@@ -1,0 +1,84 @@
+package middleware
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"runtime/debug"
+)
+
+// RecoveryMiddleware recovers from panics and returns a 500 error
+func RecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				// Log the error and stack trace
+				log.Printf("Panic recovered: %v\n%s", err, debug.Stack())
+
+				// Return a generic error message to the client
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprintf(w, `{"error":"Internal Server Error"}`)
+			}
+		}()
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RecoveryWithLogger allows custom logging of panics
+func RecoveryWithLogger(logger *log.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if err := recover(); err != nil {
+					// Get request details
+					reqID := r.Header.Get("X-Request-ID")
+					if reqID == "" {
+						reqID = "unknown"
+					}
+
+					// Log with custom logger
+					logger.Printf(
+						"PANIC [%s] %s %s: %v\nStack trace:\n%s",
+						reqID,
+						r.Method,
+						r.RequestURI,
+						err,
+						debug.Stack(),
+					)
+
+					// Return error response
+					w.Header().Set("Content-Type", "application/json")
+					w.Header().Set("X-Request-ID", reqID)
+					w.WriteHeader(http.StatusInternalServerError)
+					fmt.Fprintf(w, `{"error":"Internal Server Error","request_id":"%s"}`, reqID)
+				}
+			}()
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// DevelopmentRecovery provides detailed error information in development
+func DevelopmentRecovery(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				stack := debug.Stack()
+
+				// In development, return detailed error information
+				log.Printf("PANIC: %v\n%s", err, stack)
+
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+				w.WriteHeader(http.StatusInternalServerError)
+
+				fmt.Fprintf(w, "PANIC: %v\n\n", err)
+				fmt.Fprintf(w, "Stack Trace:\n%s", stack)
+			}
+		}()
+
+		next.ServeHTTP(w, r)
+	})
+}

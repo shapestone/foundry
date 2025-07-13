@@ -1,0 +1,187 @@
+package middleware
+
+import (
+	"compress/gzip"
+	"io"
+	"net/http"
+	"strings"
+	"sync"
+)
+
+// CompressionMiddleware compresses responses using gzip
+func CompressionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if client accepts gzip
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Skip compression for small responses or already compressed content
+		if r.Header.Get("Content-Encoding") != "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Create gzip writer
+		gz := gzipPool.Get().(*gzip.Writer)
+		defer gzipPool.Put(gz)
+		defer gz.Close()
+
+		gz.Reset(w)
+
+		// Create wrapped response writer
+		gzw := &gzipResponseWriter{
+			ResponseWriter: w,
+			Writer:         gz,
+		}
+
+		// Set appropriate headers
+		gzw.Header().Set("Content-Encoding", "gzip")
+		gzw.Header().Del("Content-Length") // Content-Length will change after compression
+
+		// Handle the request
+		next.ServeHTTP(gzw, r)
+	})
+}
+
+// gzipPool reuses gzip writers for better performance
+var gzipPool = sync.Pool{
+	New: func() interface{} {
+		gz, _ := gzip.NewWriterLevel(nil, gzip.DefaultCompression)
+		return gz
+	},
+}
+
+// gzipResponseWriter wraps http.ResponseWriter to provide gzip compression
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	Writer *gzip.Writer
+	written bool
+}
+
+// Write compresses data before writing
+func (w *gzipResponseWriter) Write(b []byte) (int, error) {
+	if !w.written {
+		// Set default content type if not set
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", http.DetectContentType(b))
+		}
+		w.written = true
+	}
+	return w.Writer.Write(b)
+}
+
+// WriteHeader sends an HTTP response header with the provided status code
+func (w *gzipResponseWriter) WriteHeader(status int) {
+	w.written = true
+	w.ResponseWriter.WriteHeader(status)
+}
+
+// Flush implements http.Flusher
+func (w *gzipResponseWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		w.Writer.Flush()
+		flusher.Flush()
+	}
+}
+
+// SelectiveCompression allows configuring which content types to compress
+type SelectiveCompression struct {
+	MinSize      int      // Minimum size in bytes to compress
+	ContentTypes []string // Content types to compress
+}
+
+// NewSelectiveCompression creates a compression middleware with configuration
+func NewSelectiveCompression() *SelectiveCompression {
+	return &SelectiveCompression{
+		MinSize: 1024, // 1KB minimum
+		ContentTypes: []string{
+			"text/html",
+			"text/css",
+			"text/javascript",
+			"application/javascript",
+			"application/json",
+			"application/xml",
+			"text/xml",
+			"text/plain",
+		},
+	}
+}
+
+// ShouldCompress determines if the response should be compressed
+func (sc *SelectiveCompression) ShouldCompress(contentType string) bool {
+	for _, ct := range sc.ContentTypes {
+		if strings.Contains(contentType, ct) {
+			return true
+		}
+	}
+	return false
+}
+
+// Middleware returns the selective compression middleware
+func (sc *SelectiveCompression) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if client accepts gzip
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Use a wrapper to check content type before compressing
+		wrapper := &compressionDecider{
+			ResponseWriter: w,
+			compress:       sc,
+			request:        r,
+		}
+
+		next.ServeHTTP(wrapper, r)
+	})
+}
+
+// compressionDecider delays compression decision until Write is called
+type compressionDecider struct {
+	http.ResponseWriter
+	compress *SelectiveCompression
+	request  *http.Request
+	decided  bool
+	gzWriter *gzipResponseWriter
+}
+
+func (cd *compressionDecider) Write(b []byte) (int, error) {
+	if !cd.decided {
+		cd.decided = true
+
+		// Check content type and size
+		contentType := cd.Header().Get("Content-Type")
+		if contentType == "" {
+			contentType = http.DetectContentType(b)
+		}
+
+		if cd.compress.ShouldCompress(contentType) && len(b) >= cd.compress.MinSize {
+			// Set up compression
+			gz := gzipPool.Get().(*gzip.Writer)
+			gz.Reset(cd.ResponseWriter)
+
+			cd.gzWriter = &gzipResponseWriter{
+				ResponseWriter: cd.ResponseWriter,
+				Writer:         gz,
+			}
+
+			cd.Header().Set("Content-Encoding", "gzip")
+			cd.Header().Del("Content-Length")
+
+			return cd.gzWriter.Write(b)
+		}
+	}
+
+	if cd.gzWriter != nil {
+		return cd.gzWriter.Write(b)
+	}
+	return cd.ResponseWriter.Write(b)
+}
+
+func (cd *compressionDecider) WriteHeader(status int) {
+	cd.decided = true
+	cd.ResponseWriter.WriteHeader(status)
+}

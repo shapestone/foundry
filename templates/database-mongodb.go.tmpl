@@ -1,0 +1,190 @@
+package database
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readpref"
+)
+
+// DB wraps the MongoDB client and database
+type DB struct {
+	client   *mongo.Client
+	database *mongo.Database
+}
+
+// NewConnection creates a new MongoDB connection
+func NewConnection() (*DB, error) {
+	cfg := LoadConfig()
+
+	// Set client options
+	clientOptions := options.Client().
+		ApplyURI(cfg.URI).
+		SetMaxPoolSize(uint64(cfg.MaxConnections)).
+		SetMinPoolSize(uint64(cfg.MinConnections)).
+		SetMaxConnIdleTime(cfg.MaxConnIdleTime).
+		SetConnectTimeout(cfg.ConnectTimeout)
+
+	// Create context for connection
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Connect to MongoDB
+	client, err := mongo.Connect(ctx, clientOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
+	}
+
+	// Ping the database
+	if err := client.Ping(ctx, readpref.Primary()); err != nil {
+		client.Disconnect(ctx)
+		return nil, fmt.Errorf("failed to ping MongoDB: %w", err)
+	}
+
+	// Get database handle
+	database := client.Database(cfg.DatabaseName)
+
+	return &DB{
+		client:   client,
+		database: database,
+	}, nil
+}
+
+// Close disconnects from MongoDB
+func (db *DB) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return db.client.Disconnect(ctx)
+}
+
+// Disconnect is an alias for Close to match MongoDB conventions
+func (db *DB) Disconnect() error {
+	return db.Close()
+}
+
+// Health checks the database connection
+func (db *DB) Health(ctx context.Context) error {
+	return db.client.Ping(ctx, readpref.Primary())
+}
+
+// Database returns the database handle
+func (db *DB) Database() *mongo.Database {
+	return db.database
+}
+
+// Collection returns a collection handle
+func (db *DB) Collection(name string) *mongo.Collection {
+	return db.database.Collection(name)
+}
+
+// Transaction executes a function within a database transaction
+func (db *DB) Transaction(ctx context.Context, fn func(mongo.SessionContext) error) error {
+	// Start a session
+	session, err := db.client.StartSession()
+	if err != nil {
+		return fmt.Errorf("failed to start session: %w", err)
+	}
+	defer session.EndSession(ctx)
+
+	// Execute the transaction
+	err = mongo.WithSession(ctx, session, func(sc mongo.SessionContext) error {
+		// Start transaction
+		if err := session.StartTransaction(); err != nil {
+			return fmt.Errorf("failed to start transaction: %w", err)
+		}
+
+		// Execute the function
+		if err := fn(sc); err != nil {
+			// Abort transaction on error
+			if abortErr := session.AbortTransaction(sc); abortErr != nil {
+				return fmt.Errorf("transaction failed: %v, abort failed: %w", err, abortErr)
+			}
+			return err
+		}
+
+		// Commit transaction
+		if err := session.CommitTransaction(sc); err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
+		}
+
+		return nil
+	})
+
+	return err
+}
+
+// CreateIndexes creates indexes for a collection
+func (db *DB) CreateIndexes(ctx context.Context, collection string, indexes []mongo.IndexModel) error {
+	coll := db.Collection(collection)
+
+	_, err := coll.Indexes().CreateMany(ctx, indexes)
+	if err != nil {
+		return fmt.Errorf("failed to create indexes for %s: %w", collection, err)
+	}
+
+	if os.Getenv("DB_DEBUG") == "true" {
+		fmt.Printf("[DB] Created %d indexes for collection: %s\n", len(indexes), collection)
+	}
+
+	return nil
+}
+
+// DropCollection drops a collection
+func (db *DB) DropCollection(ctx context.Context, name string) error {
+	return db.Collection(name).Drop(ctx)
+}
+
+// ListCollections returns all collection names in the database
+func (db *DB) ListCollections(ctx context.Context) ([]string, error) {
+	collections, err := db.database.ListCollectionNames(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list collections: %w", err)
+	}
+	return collections, nil
+}
+
+// RunCommand runs a database command
+func (db *DB) RunCommand(ctx context.Context, command interface{}) error {
+	return db.database.RunCommand(ctx, command).Err()
+}
+
+// Aggregate runs an aggregation pipeline on a collection
+func (db *DB) Aggregate(ctx context.Context, collection string, pipeline interface{}, opts ...*options.AggregateOptions) (*mongo.Cursor, error) {
+	start := time.Now()
+	cursor, err := db.Collection(collection).Aggregate(ctx, pipeline, opts...)
+
+	if os.Getenv("DB_DEBUG") == "true" {
+		fmt.Printf("[DB] Aggregate (%v) on %s\n", time.Since(start), collection)
+	}
+
+	return cursor, err
+}
+
+// CountDocuments counts documents in a collection
+func (db *DB) CountDocuments(ctx context.Context, collection string, filter interface{}, opts ...*options.CountOptions) (int64, error) {
+	start := time.Now()
+	count, err := db.Collection(collection).CountDocuments(ctx, filter, opts...)
+
+	if os.Getenv("DB_DEBUG") == "true" {
+		fmt.Printf("[DB] Count (%v) on %s: %d documents\n", time.Since(start), collection, count)
+	}
+
+	return count, err
+}
+
+// IsDuplicateKey checks if an error is a MongoDB duplicate key error
+func IsDuplicateKey(err error) bool {
+	if err == nil {
+		return false
+	}
+	return mongo.IsDuplicateKeyError(err)
+}
+
+// IsNoDocuments checks if an error means no documents were found
+func IsNoDocuments(err error) bool {
+	return err == mongo.ErrNoDocuments
+}

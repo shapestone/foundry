@@ -1,3 +1,36 @@
-bin/
+# Binaries
 *.exe
+*.dll
+*.so
+*.dylib
+/foundry
+/foundry-test
+
+# Test binary
+*.test
+
+# Test output directory
+/tmp/
+/test-output/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# Go specific
+vendor/
+go.sum
+*.out
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.local

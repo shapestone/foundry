@@ -1,0 +1,222 @@
+package services
+
+import (
+	"context"
+
+	"{{.ModuleName}}/internal/models"
+	"{{.ModuleName}}/internal/repository"
+	"{{.ModuleName}}/pkg/errors"
+)
+
+// {{.ComponentName | title}}Service defines the interface for {{.ComponentName | snake_case}} business logic
+type {{.ComponentName | title}}Service interface {
+	List(ctx context.Context, page, limit int) ([]*models.{{.ComponentName | title}}, int64, error)
+	GetByID(ctx context.Context, id int64) (*models.{{.ComponentName | title}}, error)
+	Create(ctx context.Context, req *models.Create{{.ComponentName | title}}Request) (*models.{{.ComponentName | title}}, error)
+	Update(ctx context.Context, id int64, req *models.Update{{.ComponentName | title}}Request) (*models.{{.ComponentName | title}}, error)
+	Delete(ctx context.Context, id int64) error
+	Search(ctx context.Context, filter *models.{{.ComponentName | title}}Filter) (*models.{{.ComponentName | title}}Response, error)
+}
+
+// {{.ComponentName | snake_case}}Service implements {{.ComponentName | title}}Service interface
+type {{.ComponentName | snake_case}}Service struct {
+	repo repository.{{.ComponentName | title}}Repository
+}
+
+// New{{.ComponentName | title}}Service creates a new {{.ComponentName | snake_case}} service
+func New{{.ComponentName | title}}Service(repo repository.{{.ComponentName | title}}Repository) {{.ComponentName | title}}Service {
+	return &{{.ComponentName | snake_case}}Service{
+		repo: repo,
+	}
+}
+
+// List retrieves a paginated list of {{.ComponentName | snake_case | plural}}
+func (s *{{.ComponentName | snake_case}}Service) List(ctx context.Context, page, limit int) ([]*models.{{.ComponentName | title}}, int64, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	filter := &models.{{.ComponentName | title}}Filter{
+		Page:  page,
+		Limit: limit,
+	}
+	filter.Normalize()
+
+	{{.ComponentName | snake_case | plural}}, err := s.repo.FindByFilter(ctx, filter)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "failed to list {{.ComponentName | snake_case | plural}}")
+	}
+
+	total, err := s.repo.CountByFilter(ctx, filter)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "failed to count {{.ComponentName | snake_case | plural}}")
+	}
+
+	return {{.ComponentName | snake_case | plural}}, total, nil
+}
+
+// GetByID retrieves a {{.ComponentName | snake_case}} by ID
+func (s *{{.ComponentName | snake_case}}Service) GetByID(ctx context.Context, id int64) (*models.{{.ComponentName | title}}, error) {
+	if id <= 0 {
+		return nil, errors.NewValidationError("invalid {{.ComponentName | snake_case}} ID")
+	}
+
+	{{.ComponentName | snake_case}}, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.IsNotFoundError(err) {
+			return nil, errors.NewNotFoundError("{{.ComponentName | snake_case}} not found")
+		}
+		return nil, errors.Wrap(err, "failed to get {{.ComponentName | snake_case}}")
+	}
+
+	return {{.ComponentName | snake_case}}, nil
+}
+
+// Create creates a new {{.ComponentName | snake_case}}
+func (s *{{.ComponentName | snake_case}}Service) Create(ctx context.Context, req *models.Create{{.ComponentName | title}}Request) (*models.{{.ComponentName | title}}, error) {
+	if req == nil {
+		return nil, errors.NewValidationError("create request is required")
+	}
+
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Business logic validation
+	if err := s.validateCreateRequest(ctx, req); err != nil {
+		return nil, err
+	}
+
+	{{.ComponentName | snake_case}} := req.ToEntity()
+
+	created{{.ComponentName | title}}, err := s.repo.Create(ctx, {{.ComponentName | snake_case}})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create {{.ComponentName | snake_case}}")
+	}
+
+	return created{{.ComponentName | title}}, nil
+}
+
+// Update updates an existing {{.ComponentName | snake_case}}
+func (s *{{.ComponentName | snake_case}}Service) Update(ctx context.Context, id int64, req *models.Update{{.ComponentName | title}}Request) (*models.{{.ComponentName | title}}, error) {
+	if id <= 0 {
+		return nil, errors.NewValidationError("invalid {{.ComponentName | snake_case}} ID")
+	}
+
+	if req == nil {
+		return nil, errors.NewValidationError("update request is required")
+	}
+
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Get existing {{.ComponentName | snake_case}}
+	existing{{.ComponentName | title}}, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.IsNotFoundError(err) {
+			return nil, errors.NewNotFoundError("{{.ComponentName | snake_case}} not found")
+		}
+		return nil, errors.Wrap(err, "failed to get {{.ComponentName | snake_case}}")
+	}
+
+	// Business logic validation
+	if err := s.validateUpdateRequest(ctx, id, req); err != nil {
+		return nil, err
+	}
+
+	// Apply updates
+	req.ApplyUpdates(existing{{.ComponentName | title}})
+
+	updated{{.ComponentName | title}}, err := s.repo.Update(ctx, existing{{.ComponentName | title}})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to update {{.ComponentName | snake_case}}")
+	}
+
+	return updated{{.ComponentName | title}}, nil
+}
+
+// Delete deletes a {{.ComponentName | snake_case}}
+func (s *{{.ComponentName | snake_case}}Service) Delete(ctx context.Context, id int64) error {
+	if id <= 0 {
+		return errors.NewValidationError("invalid {{.ComponentName | snake_case}} ID")
+	}
+
+	// Check if {{.ComponentName | snake_case}} exists
+	_, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.IsNotFoundError(err) {
+			return errors.NewNotFoundError("{{.ComponentName | snake_case}} not found")
+		}
+		return errors.Wrap(err, "failed to get {{.ComponentName | snake_case}}")
+	}
+
+	// Business logic validation for deletion
+	if err := s.validateDeleteRequest(ctx, id); err != nil {
+		return err
+	}
+
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return errors.Wrap(err, "failed to delete {{.ComponentName | snake_case}}")
+	}
+
+	return nil
+}
+
+// Search searches {{.ComponentName | snake_case | plural}} with advanced filtering
+func (s *{{.ComponentName | snake_case}}Service) Search(ctx context.Context, filter *models.{{.ComponentName | title}}Filter) (*models.{{.ComponentName | title}}Response, error) {
+	if filter == nil {
+		filter = models.DefaultFilter()
+	}
+	filter.Normalize()
+
+	{{.ComponentName | snake_case | plural}}, err := s.repo.FindByFilter(ctx, filter)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to search {{.ComponentName | snake_case | plural}}")
+	}
+
+	total, err := s.repo.CountByFilter(ctx, filter)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to count {{.ComponentName | snake_case | plural}}")
+	}
+
+	return &models.{{.ComponentName | title}}Response{
+		Data:  {{.ComponentName | snake_case | plural}},
+		Total: total,
+		Page:  filter.Page,
+		Limit: filter.Limit,
+	}, nil
+}
+
+// validateCreateRequest performs business logic validation for create operations
+func (s *{{.ComponentName | snake_case}}Service) validateCreateRequest(ctx context.Context, req *models.Create{{.ComponentName | title}}Request) error {
+	// Add your business logic validation here
+	// Example:
+	// - Check for duplicates
+	// - Validate business rules
+	// - Check permissions
+	return nil
+}
+
+// validateUpdateRequest performs business logic validation for update operations
+func (s *{{.ComponentName | snake_case}}Service) validateUpdateRequest(ctx context.Context, id int64, req *models.Update{{.ComponentName | title}}Request) error {
+	// Add your business logic validation here
+	// Example:
+	// - Check for duplicates (excluding current record)
+	// - Validate business rules
+	// - Check permissions
+	return nil
+}
+
+// validateDeleteRequest performs business logic validation for delete operations
+func (s *{{.ComponentName | snake_case}}Service) validateDeleteRequest(ctx context.Context, id int64) error {
+	// Add your business logic validation here
+	// Example:
+	// - Check for dependencies
+	// - Validate business rules
+	// - Check permissions
+	return nil
+}

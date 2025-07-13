@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: {{ .DockerImage }}
+    container_name: {{ .ProjectName }}_mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: mongodb
+      MONGO_INITDB_DATABASE: {{ .ProjectName }}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: Mongo Express for database management
+  mongo-express:
+    image: mongo-express:latest
+    container_name: {{ .ProjectName }}_mongo_express
+    restart: unless-stopped
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: root
+      ME_CONFIG_MONGODB_ADMINPASSWORD: mongodb
+      ME_CONFIG_MONGODB_URL: mongodb://root:mongodb@mongodb:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin
+    ports:
+      - "8082:8081"
+    depends_on:
+      - mongodb
+    profiles:
+      - tools
+
+volumes:
+  mongodb_data:
+    name: {{ .ProjectName }}_mongodb_data
+  mongodb_config:
+    name: {{ .ProjectName }}_mongodb_config
+
+networks:
+  default:
+    name: {{ .ProjectName }}_network

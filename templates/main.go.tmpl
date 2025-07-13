@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"{{ .Module }}/internal/routes"
 )
 
 func main() {
@@ -26,15 +27,12 @@ func main() {
 	r.Get("/health", handleHealth)
 
 	// API routes
-	r.Route("/api/v1", func(r chi.Router) {
-		// Add your API routes here
-		// Example: r.Get("/users", handleGetUsers)
-	})
+	r.Route("/api/v1", routes.RegisterAPIRoutes)
 
 	port := "8080"
 	fmt.Printf("🚀 {{ .ProjectName }} is running on port %s\n", port)
 	fmt.Println("🌐 http://localhost:" + port)
-	
+
 	if err := http.ListenAndServe(":"+port, r); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
@@ -46,7 +44,7 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 		"version": "1.0.0",
 		"docs":    "/health",
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -57,7 +55,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		"service":   "{{ .ProjectName }}",
 		"timestamp": time.Now().Unix(),
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }

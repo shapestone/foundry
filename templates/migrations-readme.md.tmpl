@@ -1,0 +1,92 @@
+```markdown
+# Database Migrations
+
+This directory contains database migration files for {{ .DBTypeTitle }}.
+
+## Migration Naming Convention
+
+Migration files should follow this naming pattern:
+```
+XXX_description.sql
+```
+
+Where:
+- `XXX` is a sequential number (001, 002, 003, etc.)
+- `description` is a brief description of what the migration does
+
+Examples:
+- `001_initial_schema.sql`
+- `002_add_users_table.sql`
+- `003_add_email_index.sql`
+
+## Running Migrations
+
+### Manual Migration
+
+Apply migrations manually by running each SQL file in order:
+
+{{ if eq .DBType "postgres" }}
+```bash
+# PostgreSQL
+psql -h localhost -U postgres -d {{ .ProjectName }} -f migrations/001_initial_schema.sql
+```
+{{ else if eq .DBType "mysql" }}
+```bash
+# MySQL
+mysql -h localhost -u root -p {{ .ProjectName }} < migrations/001_initial_schema.sql
+```
+{{ else if eq .DBType "sqlite" }}
+```bash
+# SQLite
+sqlite3 data/{{ .ProjectName }}.db < migrations/001_initial_schema.sql
+```
+{{ end }}
+
+### Using a Migration Tool
+
+For production use, consider using a migration tool:
+
+1. **golang-migrate/migrate**
+   ```bash
+   # Install
+   go install -tags '{{ .DBType }}' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+   
+   # Run migrations
+   migrate -path migrations -database "{{ .DBType }}://..." up
+   ```
+
+2. **pressly/goose**
+   ```bash
+   # Install
+   go install github.com/pressly/goose/v3/cmd/goose@latest
+   
+   # Run migrations
+   goose {{ .DBType }} "connection-string" up
+   ```
+
+## Creating Migrations
+
+When creating a new migration:
+
+1. Use the next sequential number
+2. Keep migrations small and focused
+3. Always include both UP and DOWN migrations (if using a tool)
+4. Test migrations on a development database first
+5. Never modify existing migrations that have been applied
+
+## Best Practices
+
+- **Backward Compatibility**: Ensure migrations don't break existing code
+- **Data Safety**: Always backup before running migrations in production
+- **Idempotency**: Make migrations safe to run multiple times
+- **Performance**: Consider the impact of migrations on large tables
+- **Documentation**: Document complex migrations with comments
+
+## Migration Status
+
+Track which migrations have been applied:
+
+```sql
+SELECT * FROM schema_migrations ORDER BY version;
+```
+```

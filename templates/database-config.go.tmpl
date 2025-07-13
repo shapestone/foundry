@@ -1,0 +1,133 @@
+package database
+
+import (
+	"os"
+	"strconv"
+	"time"
+)
+
+// Config holds database configuration
+type Config struct {
+	{{ if eq .DBType "postgres" }}
+	Host            string
+	Port            string
+	Name            string
+	User            string
+	Password        string
+	SSLMode         string
+	MaxConnections  int32
+	MinConnections  int32
+	MaxConnLifetime time.Duration
+	MaxConnIdleTime time.Duration
+	ConnectTimeout  time.Duration
+	{{ else if eq .DBType "mysql" }}
+	Host            string
+	Port            string
+	Name            string
+	User            string
+	Password        string
+	MaxConnections  int
+	MinConnections  int
+	MaxConnLifetime time.Duration
+	MaxConnIdleTime time.Duration
+	ConnectTimeout  time.Duration
+	{{ else if eq .DBType "sqlite" }}
+	Path           string
+	ConnectTimeout time.Duration
+	{{ else if eq .DBType "mongodb" }}
+	URI            string
+	DatabaseName   string
+	MaxConnections int
+	MinConnections int
+	MaxConnIdleTime time.Duration
+	ConnectTimeout  time.Duration
+	{{ end }}
+}
+
+// LoadConfig loads database configuration from environment variables
+func LoadConfig() *Config {
+	cfg := &Config{}
+
+	{{ if eq .DBType "postgres" }}
+	// PostgreSQL configuration
+	cfg.Host = getEnv("DB_HOST", "localhost")
+	cfg.Port = getEnv("DB_PORT", "5432")
+	cfg.Name = getEnv("DB_NAME", "{{ .ProjectName }}")
+	cfg.User = getEnv("DB_USER", "postgres")
+	cfg.Password = getEnv("DB_PASSWORD", "postgres")
+	cfg.SSLMode = getEnv("DB_SSLMODE", "disable")
+
+	cfg.MaxConnections = int32(getEnvAsInt("DB_MAX_CONNECTIONS", 25))
+	cfg.MinConnections = int32(getEnvAsInt("DB_MIN_CONNECTIONS", 5))
+	cfg.MaxConnLifetime = getEnvAsDuration("DB_MAX_CONN_LIFETIME", 30*time.Minute)
+	cfg.MaxConnIdleTime = getEnvAsDuration("DB_MAX_CONN_IDLE_TIME", 10*time.Minute)
+	cfg.ConnectTimeout = getEnvAsDuration("DB_CONNECT_TIMEOUT", 10*time.Second)
+
+	{{ else if eq .DBType "mysql" }}
+	// MySQL configuration
+	cfg.Host = getEnv("DB_HOST", "localhost")
+	cfg.Port = getEnv("DB_PORT", "3306")
+	cfg.Name = getEnv("DB_NAME", "{{ .ProjectName }}")
+	cfg.User = getEnv("DB_USER", "root")
+	cfg.Password = getEnv("DB_PASSWORD", "mysql")
+
+	cfg.MaxConnections = getEnvAsInt("DB_MAX_CONNECTIONS", 25)
+	cfg.MinConnections = getEnvAsInt("DB_MIN_CONNECTIONS", 5)
+	cfg.MaxConnLifetime = getEnvAsDuration("DB_MAX_CONN_LIFETIME", 30*time.Minute)
+	cfg.MaxConnIdleTime = getEnvAsDuration("DB_MAX_CONN_IDLE_TIME", 10*time.Minute)
+	cfg.ConnectTimeout = getEnvAsDuration("DB_CONNECT_TIMEOUT", 10*time.Second)
+
+	{{ else if eq .DBType "sqlite" }}
+	// SQLite configuration
+	cfg.Path = getEnv("DB_PATH", "./data/{{ .ProjectName }}.db")
+	cfg.ConnectTimeout = getEnvAsDuration("DB_CONNECT_TIMEOUT", 10*time.Second)
+
+	{{ else if eq .DBType "mongodb" }}
+	// MongoDB configuration
+	cfg.URI = getEnv("MONGO_URI", "mongodb://localhost:27017")
+	cfg.DatabaseName = getEnv("MONGO_DATABASE", "{{ .ProjectName }}")
+
+	cfg.MaxConnections = getEnvAsInt("MONGO_MAX_CONNECTIONS", 100)
+	cfg.MinConnections = getEnvAsInt("MONGO_MIN_CONNECTIONS", 10)
+	cfg.MaxConnIdleTime = getEnvAsDuration("MONGO_MAX_CONN_IDLE_TIME", 10*time.Minute)
+	cfg.ConnectTimeout = getEnvAsDuration("MONGO_CONNECT_TIMEOUT", 10*time.Second)
+	{{ end }}
+
+	return cfg
+}
+
+// getEnv gets an environment variable with a default value
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+// getEnvAsInt gets an environment variable as an integer with a default value
+func getEnvAsInt(key string, defaultValue int) int {
+	strValue := getEnv(key, "")
+	if strValue == "" {
+		return defaultValue
+	}
+
+	if value, err := strconv.Atoi(strValue); err == nil {
+		return value
+	}
+
+	return defaultValue
+}
+
+// getEnvAsDuration gets an environment variable as a duration with a default value
+func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
+	strValue := getEnv(key, "")
+	if strValue == "" {
+		return defaultValue
+	}
+
+	if value, err := time.ParseDuration(strValue); err == nil {
+		return value
+	}
+
+	return defaultValue
+}

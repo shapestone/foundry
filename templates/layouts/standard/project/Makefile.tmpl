@@ -1,0 +1,120 @@
+# {{.ProjectName}} Makefile
+
+# Application name
+APP_NAME={{.ProjectName | snake_case}}
+
+# Build directory
+BUILD_DIR=./bin
+
+# Go parameters
+GOCMD=go
+GOBUILD=$(GOCMD) build
+GOCLEAN=$(GOCMD) clean
+GOTEST=$(GOCMD) test
+GOGET=$(GOCMD) get
+GOMOD=$(GOCMD) mod
+
+# Binary name
+BINARY_NAME=$(APP_NAME)
+BINARY_UNIX=$(BINARY_NAME)_unix
+
+# Version info
+VERSION=$(shell git describe --tags --always --dirty)
+BUILD_TIME=$(shell date +%Y-%m-%dT%H:%M:%S%z)
+GIT_COMMIT=$(shell git rev-parse HEAD)
+
+# Linker flags
+LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME) -X main.GitCommit=$(GIT_COMMIT)"
+
+.PHONY: all build clean test deps run dev help install
+
+all: clean deps test build
+
+help: ## Show this help message
+	@echo 'Usage: make [target]'
+	@echo ''
+	@echo 'Targets:'
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+deps: ## Download dependencies
+	$(GOMOD) download
+	$(GOMOD) tidy
+
+build: ## Build the application
+	@mkdir -p $(BUILD_DIR)
+	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) -v ./cmd/$(APP_NAME)
+
+build-linux: ## Build for Linux
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_UNIX) -v ./cmd/$(APP_NAME)
+
+clean: ## Clean build artifacts
+	$(GOCLEAN)
+	rm -rf $(BUILD_DIR)
+
+test: ## Run tests
+	$(GOTEST) -v ./...
+
+test-coverage: ## Run tests with coverage
+	$(GOTEST) -v -coverprofile=coverage.out ./...
+	$(GOCMD) tool cover -html=coverage.out -o coverage.html
+
+test-race: ## Run tests with race detection
+	$(GOTEST) -v -race ./...
+
+run: build ## Build and run the application
+	./$(BUILD_DIR)/$(BINARY_NAME)
+
+dev: ## Run with live reload (requires air)
+	@which air > /dev/null || (echo "air not found, installing..." && go install github.com/cosmtrek/air@latest)
+	air
+
+install: ## Install the application globally
+	$(GOBUILD) $(LDFLAGS) -o $(GOPATH)/bin/$(BINARY_NAME) ./cmd/$(APP_NAME)
+
+fmt: ## Format code
+	$(GOCMD) fmt ./...
+
+vet: ## Run go vet
+	$(GOCMD) vet ./...
+
+lint: ## Run golangci-lint
+	@which golangci-lint > /dev/null || (echo "golangci-lint not found, installing..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+	golangci-lint run
+
+security: ## Run security scan
+	@which gosec > /dev/null || (echo "gosec not found, installing..." && go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest)
+	gosec ./...
+
+docker-build: ## Build Docker image
+	docker build -t $(APP_NAME):latest .
+	docker tag $(APP_NAME):latest $(APP_NAME):$(VERSION)
+
+docker-run: ## Run Docker container
+	docker run -p 8080:8080 --env-file .env $(APP_NAME):latest
+
+docker-compose-up: ## Start services with docker-compose
+	docker-compose up --build
+
+docker-compose-down: ## Stop services with docker-compose
+	docker-compose down
+
+docker-compose-logs: ## View docker-compose logs
+	docker-compose logs -f
+
+benchmark: ## Run benchmarks
+	$(GOTEST) -bench=. -benchmem ./...
+
+generate: ## Run go generate
+	$(GOCMD) generate ./...
+
+mod-update: ## Update all dependencies
+	$(GOGET) -u ./...
+	$(GOMOD) tidy
+
+check: fmt vet lint test ## Run all checks
+
+release: clean deps check build-linux ## Prepare for release
+	@echo "Release $(VERSION) ready in $(BUILD_DIR)/"
+
+.DEFAULT_GOAL := help

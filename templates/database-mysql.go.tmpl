@@ -1,0 +1,172 @@
+package database
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"os"
+	"time"
+
+	_ "github.com/go-sql-driver/mysql"
+)
+
+// DB wraps the MySQL connection pool
+type DB struct {
+	*sql.DB
+}
+
+// NewConnection creates a new MySQL connection
+func NewConnection() (*DB, error) {
+	cfg := LoadConfig()
+
+	// Build connection string
+	dsn := fmt.Sprintf(
+		"%s:%s@tcp(%s:%s)/%s?parseTime=true&multiStatements=true",
+		cfg.User,
+		cfg.Password,
+		cfg.Host,
+		cfg.Port,
+		cfg.Name,
+	)
+
+	// Open database connection
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	// Configure connection pool
+	db.SetMaxOpenConns(cfg.MaxConnections)
+	db.SetMaxIdleConns(cfg.MinConnections)
+	db.SetConnMaxLifetime(cfg.MaxConnLifetime)
+	db.SetConnMaxIdleTime(cfg.MaxConnIdleTime)
+
+	// Test the connection
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.ConnectTimeout)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	return &DB{DB: db}, nil
+}
+
+// Close closes the database connection
+func (db *DB) Close() error {
+	return db.DB.Close()
+}
+
+// Health checks the database connection
+func (db *DB) Health(ctx context.Context) error {
+	return db.PingContext(ctx)
+}
+
+// Transaction executes a function within a database transaction
+func (db *DB) Transaction(ctx context.Context, fn func(*sql.Tx) error) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			// Rollback on panic
+			tx.Rollback()
+			panic(p)
+		}
+	}()
+
+	if err := fn(tx); err != nil {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			return fmt.Errorf("transaction failed: %v, rollback failed: %w", err, rbErr)
+		}
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// QueryRowContext is a convenience wrapper that adds query logging
+func (db *DB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+	start := time.Now()
+	row := db.DB.QueryRowContext(ctx, query, args...)
+
+	if os.Getenv("DB_DEBUG") == "true" {
+		fmt.Printf("[DB] Query (%v): %s\n", time.Since(start), query)
+	}
+
+	return row
+}
+
+// QueryContext is a convenience wrapper that adds query logging
+func (db *DB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	start := time.Now()
+	rows, err := db.DB.QueryContext(ctx, query, args...)
+
+	if os.Getenv("DB_DEBUG") == "true" {
+		fmt.Printf("[DB] Query (%v): %s\n", time.Since(start), query)
+	}
+
+	return rows, err
+}
+
+// ExecContext is a convenience wrapper that adds query logging
+func (db *DB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+	start := time.Now()
+	result, err := db.DB.ExecContext(ctx, query, args...)
+
+	if os.Getenv("DB_DEBUG") == "true" {
+		fmt.Printf("[DB] Exec (%v): %s\n", time.Since(start), query)
+	}
+
+	return result, err
+}
+
+// Migrate runs database migrations (basic implementation)
+func (db *DB) Migrate(ctx context.Context) error {
+	// Create migrations table if not exists
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version INT PRIMARY KEY,
+			applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create migrations table: %w", err)
+	}
+
+	// TODO: Implement migration logic
+	// This is a placeholder for migration functionality
+	// Consider using a migration library like golang-migrate/migrate
+
+	return nil
+}
+
+// Prepare creates a prepared statement for later queries or executions
+func (db *DB) Prepare(ctx context.Context, query string) (*sql.Stmt, error) {
+	return db.PrepareContext(ctx, query)
+}
+
+// IsDeadlock checks if an error is a MySQL deadlock error
+func IsDeadlock(err error) bool {
+	if err == nil {
+		return false
+	}
+	// MySQL error code 1213 is for deadlock
+	return err.Error() == "Error 1213: Deadlock found when trying to get lock; try restarting transaction"
+}
+
+// IsDuplicateEntry checks if an error is a MySQL duplicate entry error
+func IsDuplicateEntry(err error) bool {
+	if err == nil {
+		return false
+	}
+	// MySQL error code 1062 is for duplicate entry
+	return err.Error()[:10] == "Error 1062"
+}

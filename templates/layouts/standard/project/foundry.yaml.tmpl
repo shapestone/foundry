@@ -1,0 +1,48 @@
+# Foundry project configuration
+layout: standard
+version: 1.0.0
+
+project:
+  name: {{.ProjectName}}
+  module: {{.ModuleName}}
+  description: {{.Description}}
+  author: {{.Author}}
+  license: {{.License}}
+
+# Component generation settings
+components:
+  handler:
+    target_dir: internal/handlers
+    naming: snake_case
+  model:
+    target_dir: internal/models
+    naming: pascal_case
+  middleware:
+    target_dir: internal/middleware
+    naming: snake_case
+  service:
+    target_dir: internal/services
+    naming: snake_case
+  repository:
+    target_dir: internal/repository
+    naming: snake_case
+
+# Build settings
+build:
+  binary_name: {{.ProjectName}}
+  main_package: ./cmd/{{.ProjectName}}
+
+# Development settings
+development:
+  port: {{if .CustomVariables.http_port}}{{.CustomVariables.http_port}}{{else}}8080{{end}}
+  hot_reload: true
+
+# Docker settings
+docker:
+  image_name: {{.ProjectName}}
+  base_image: golang:1.21-alpine
+
+# Testing settings
+testing:
+  coverage_threshold: 80
+  test_timeout: 5m

@@ -1,0 +1,98 @@
+name: "standard"
+version: "1.0.0"
+author: "Foundry Team"
+description: "Standard Go project layout with Gorilla Mux router, middleware stack, and best practices"
+min_foundry_version: "0.5.0"
+
+structure:
+  directories:
+    - path: "internal/handlers"
+      description: "HTTP request handlers"
+    - path: "internal/models"
+      description: "Data models and domain types"
+    - path: "internal/middleware"
+      description: "HTTP middleware components"
+    - path: "internal/config"
+      description: "Configuration management"
+    - path: "internal/services"
+      description: "Business logic layer"
+    - path: "internal/repository"
+      description: "Data access layer"
+    - path: "pkg"
+      description: "Public packages"
+    - path: "docs"
+      description: "Documentation"
+    - path: "scripts"
+      description: "Build and deployment scripts"
+
+  files:
+    - template: "project/main.go.tmpl"
+      target: "main.go"
+    - template: "project/go.mod.tmpl"
+      target: "go.mod"
+    - template: "project/README.md.tmpl"
+      target: "README.md"
+    - template: "project/Makefile.tmpl"
+      target: "Makefile"
+    - template: "project/Dockerfile.tmpl"
+      target: "Dockerfile"
+    - template: "project/docker-compose.yml.tmpl"
+      target: "docker-compose.yml"
+    - template: "project/gitignore.tmpl"
+      target: ".gitignore"
+    - template: "project/.env.example.tmpl"
+      target: ".env.example"
+    - template: "project/foundry.yaml.tmpl"
+      target: "foundry.yaml"
+
+dependencies:
+  - "github.com/gorilla/mux"
+  - "github.com/joho/godotenv"
+
+features:
+  - "http-server"
+  - "gorilla-mux-router"
+  - "middleware-stack"
+  - "docker"
+  - "makefile"
+  - "env-config"
+  - "health-checks"
+  - "graceful-shutdown"
+
+variables:
+  - name: "http_port"
+    default: "8080"
+    description: "HTTP server port"
+  - name: "read_timeout"
+    default: "15s"
+    description: "HTTP read timeout"
+  - name: "write_timeout"
+    default: "15s"
+    description: "HTTP write timeout"
+  - name: "idle_timeout"
+    default: "60s"
+    description: "HTTP idle timeout"
+  - name: "github_username"
+    default: ""
+    description: "GitHub username for module path"
+    required: false
+
+components:
+  handler:
+    template: "components/handler.go.tmpl"
+    target_dir: "internal/handlers"
+  model:
+    template: "components/model.go.tmpl"
+    target_dir: "internal/models"
+  middleware:
+    template: "components/middleware.go.tmpl"
+    target_dir: "internal/middleware"
+  service:
+    template: "components/service.go.tmpl"
+    target_dir: "internal/services"
+  repository:
+    template: "components/repository.go.tmpl"
+    target_dir: "internal/repository"
+  config:
+    template: "components/config.go.tmpl"
+    target_dir: "internal/config"

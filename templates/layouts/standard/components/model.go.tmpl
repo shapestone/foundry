@@ -1,0 +1,142 @@
+package models
+
+import (
+	"time"
+)
+
+// {{.ComponentName | title}} represents a {{.ComponentName | snake_case}} entity
+type {{.ComponentName | title}} struct {
+	ID        int64     `json:"id" db:"id"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+
+	// Add your {{.ComponentName | snake_case}} specific fields here
+	// Example fields:
+	// Name        string `json:"name" db:"name"`
+	// Description string `json:"description" db:"description"`
+	// Status      string `json:"status" db:"status"`
+}
+
+// Create{{.ComponentName | title}}Request represents the request payload for creating a {{.ComponentName | snake_case}}
+type Create{{.ComponentName | title}}Request struct {
+	// Add your create request fields here
+	// Example fields:
+	// Name        string `json:"name" validate:"required,min=1,max=255"`
+	// Description string `json:"description" validate:"max=1000"`
+	// Status      string `json:"status" validate:"required,oneof=active inactive"`
+}
+
+// Update{{.ComponentName | title}}Request represents the request payload for updating a {{.ComponentName | snake_case}}
+type Update{{.ComponentName | title}}Request struct {
+	// Add your update request fields here (typically same as create but with omitempty)
+	// Example fields:
+	// Name        *string `json:"name,omitempty" validate:"omitempty,min=1,max=255"`
+	// Description *string `json:"description,omitempty" validate:"omitempty,max=1000"`
+	// Status      *string `json:"status,omitempty" validate:"omitempty,oneof=active inactive"`
+}
+
+// {{.ComponentName | title}}Filter represents filtering options for {{.ComponentName | snake_case}} queries
+type {{.ComponentName | title}}Filter struct {
+	// Add your filter fields here
+	// Example fields:
+	// Name   *string `json:"name,omitempty"`
+	// Status *string `json:"status,omitempty"`
+
+	// Pagination
+	Page  int `json:"page" validate:"min=1"`
+	Limit int `json:"limit" validate:"min=1,max=100"`
+
+	// Sorting
+	SortBy    string `json:"sort_by" validate:"omitempty,oneof=id name created_at updated_at"`
+	SortOrder string `json:"sort_order" validate:"omitempty,oneof=asc desc"`
+}
+
+// {{.ComponentName | title}}Response represents the response format for {{.ComponentName | snake_case}} operations
+type {{.ComponentName | title}}Response struct {
+	Data  []*{{.ComponentName | title}} `json:"data"`
+	Total int64                         `json:"total"`
+	Page  int                           `json:"page"`
+	Limit int                           `json:"limit"`
+}
+
+// Validate validates the Create{{.ComponentName | title}}Request
+func (r *Create{{.ComponentName | title}}Request) Validate() error {
+	// Add your validation logic here
+	// Example:
+	// if strings.TrimSpace(r.Name) == "" {
+	//     return errors.NewValidationError("name is required")
+	// }
+	return nil
+}
+
+// Validate validates the Update{{.ComponentName | title}}Request
+func (r *Update{{.ComponentName | title}}Request) Validate() error {
+	// Add your validation logic here
+	// Example:
+	// if r.Name != nil && strings.TrimSpace(*r.Name) == "" {
+	//     return errors.NewValidationError("name cannot be empty")
+	// }
+	return nil
+}
+
+// ToEntity converts Create{{.ComponentName | title}}Request to {{.ComponentName | title}} entity
+func (r *Create{{.ComponentName | title}}Request) ToEntity() *{{.ComponentName | title}} {
+	now := time.Now()
+	return &{{.ComponentName | title}}{
+		CreatedAt: now,
+		UpdatedAt: now,
+		// Map your fields here
+		// Example:
+		// Name:        r.Name,
+		// Description: r.Description,
+		// Status:      r.Status,
+	}
+}
+
+// ApplyUpdates applies Update{{.ComponentName | title}}Request to existing {{.ComponentName | title}} entity
+func (r *Update{{.ComponentName | title}}Request) ApplyUpdates(entity *{{.ComponentName | title}}) {
+	entity.UpdatedAt = time.Now()
+
+	// Apply updates only for non-nil fields
+	// Example:
+	// if r.Name != nil {
+	//     entity.Name = *r.Name
+	// }
+	// if r.Description != nil {
+	//     entity.Description = *r.Description
+	// }
+	// if r.Status != nil {
+	//     entity.Status = *r.Status
+	// }
+}
+
+// DefaultFilter returns a {{.ComponentName | title}}Filter with default values
+func DefaultFilter() *{{.ComponentName | title}}Filter {
+	return &{{.ComponentName | title}}Filter{
+		Page:      1,
+		Limit:     20,
+		SortBy:    "created_at",
+		SortOrder: "desc",
+	}
+}
+
+// Normalize normalizes the filter values
+func (f *{{.ComponentName | title}}Filter) Normalize() {
+	if f.Page <= 0 {
+		f.Page = 1
+	}
+	if f.Limit <= 0 || f.Limit > 100 {
+		f.Limit = 20
+	}
+	if f.SortBy == "" {
+		f.SortBy = "created_at"
+	}
+	if f.SortOrder == "" {
+		f.SortOrder = "desc"
+	}
+}
+
+// Offset calculates the offset for pagination
+func (f *{{.ComponentName | title}}Filter) Offset() int {
+	return (f.Page - 1) * f.Limit
+}

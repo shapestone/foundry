@@ -1,0 +1,121 @@
+package middleware
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"time"
+)
+
+// TimeoutMiddleware adds a timeout to all requests
+func TimeoutMiddleware(timeout time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Create a context with timeout
+			ctx, cancel := context.WithTimeout(r.Context(), timeout)
+			defer cancel()
+
+			// Create a channel to signal when the handler is done
+			done := make(chan struct{})
+
+			// Create a panic channel to capture panics from goroutine
+			panicChan := make(chan interface{}, 1)
+
+			// Custom response writer to prevent writing after timeout
+			tw := &timeoutWriter{
+				ResponseWriter: w,
+				written:        false,
+			}
+
+			// Run the handler in a goroutine
+			go func() {
+				defer func() {
+					if p := recover(); p != nil {
+						panicChan <- p
+					}
+					close(done)
+				}()
+				next.ServeHTTP(tw, r.WithContext(ctx))
+			}()
+
+			// Wait for either completion or timeout
+			select {
+			case <-done:
+				// Handler completed normally
+				return
+			case p := <-panicChan:
+				// Handler panicked
+				panic(p)
+			case <-ctx.Done():
+				// Timeout occurred
+				if !tw.Written() {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusRequestTimeout)
+					json.NewEncoder(w).Encode(map[string]string{
+						"error": "Request timeout",
+						"message": "The server did not complete the request within the allowed time",
+					})
+				}
+			}
+		})
+	}
+}
+
+// timeoutWriter wraps http.ResponseWriter to track if response was written
+type timeoutWriter struct {
+	http.ResponseWriter
+	written bool
+}
+
+func (tw *timeoutWriter) Write(b []byte) (int, error) {
+	if tw.written {
+		return 0, nil // Prevent writing after timeout
+	}
+	tw.written = true
+	return tw.ResponseWriter.Write(b)
+}
+
+func (tw *timeoutWriter) WriteHeader(statusCode int) {
+	if tw.written {
+		return // Prevent writing headers after timeout
+	}
+	tw.written = true
+	tw.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (tw *timeoutWriter) Written() bool {
+	return tw.written
+}
+
+// ConfigurableTimeout allows different timeouts for different routes
+type ConfigurableTimeout struct {
+	DefaultTimeout time.Duration
+	Routes         map[string]time.Duration // path -> timeout mapping
+}
+
+// NewConfigurableTimeout creates a timeout middleware with per-route configuration
+func NewConfigurableTimeout(defaultTimeout time.Duration) *ConfigurableTimeout {
+	return &ConfigurableTimeout{
+		DefaultTimeout: defaultTimeout,
+		Routes:         make(map[string]time.Duration),
+	}
+}
+
+// SetRouteTimeout sets a specific timeout for a route
+func (ct *ConfigurableTimeout) SetRouteTimeout(path string, timeout time.Duration) {
+	ct.Routes[path] = timeout
+}
+
+// Middleware returns the timeout middleware handler
+func (ct *ConfigurableTimeout) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if there's a specific timeout for this route
+		timeout := ct.DefaultTimeout
+		if routeTimeout, exists := ct.Routes[r.URL.Path]; exists {
+			timeout = routeTimeout
+		}
+
+		// Apply the timeout
+		TimeoutMiddleware(timeout)(next).ServeHTTP(w, r)
+	})
+}

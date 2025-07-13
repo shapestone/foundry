@@ -1,0 +1,53 @@
+package models
+
+import (
+	"errors"
+	"time"
+)
+
+// {{ .ModelName }} represents a {{ .ResourceName }} in the system
+type {{ .ModelName }} struct {
+	ID        string    `json:"id"`
+	{{ if .IncludeNameField }}Name      string    `json:"name"`{{ end }}
+	{{ if .IncludeEmailField }}Email     string    `json:"email"`{{ end }}
+	{{ if .IncludeTitleField }}Title     string    `json:"title"`{{ end }}
+	{{ if .IncludeDescriptionField }}Description string `json:"description"`{{ end }}
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// New{{ .ModelName }} creates a new {{ .ModelName }}
+func New{{ .ModelName }}() *{{ .ModelName }} {
+	return &{{ .ModelName }}{
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+}
+
+// Validate validates the {{ .ResourceName }}
+func (m *{{ .ModelName }}) Validate() error {
+	if m.ID == "" {
+		return errors.New("id is required")
+	}
+	{{ if .IncludeNameField }}
+	if m.Name == "" {
+		return errors.New("name is required")
+	}
+	{{ end }}
+	{{ if .IncludeEmailField }}
+	if m.Email == "" {
+		return errors.New("email is required")
+	}
+	{{ end }}
+	{{ if .IncludeTitleField }}
+	if m.Title == "" {
+		return errors.New("title is required")
+	}
+	{{ end }}
+	return nil
+}
+
+// Update updates the {{ .ResourceName }} timestamp
+func (m *{{ .ModelName }}) Update() {
+	m.UpdatedAt = time.Now()
+}

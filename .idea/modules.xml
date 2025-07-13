@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/foundry-minimal.iml" filepath="$PROJECT_DIR$/.idea/foundry-minimal.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/foundry.iml" filepath="$PROJECT_DIR$/.idea/foundry.iml" />
     </modules>
   </component>
 </project>
