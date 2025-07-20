@@ -1,0 +1,314 @@
+# Foundry Configuration for {{.ProjectName}}
+# This file configures the foundry CLI for this microservice project
+
+project:
+  name: "{{.ProjectName}}"
+  description: "{{.Description}}"
+  layout: "microservice"
+  version: "1.0.0"
+  module: "{{.ModuleName}}"
+
+# Primary service configuration
+service:
+  name: "{{.CustomVariables.service_name | default "user"}}"
+  type: "grpc"
+  port: {{.CustomVariables.grpc_port | default "9090"}}
+  http_port: {{.CustomVariables.http_port | default "8080"}}
+  metrics_port: {{.CustomVariables.metrics_port | default "2112"}}
+
+# Architecture settings
+architecture:
+  pattern: "microservice"
+  communication: "grpc"
+  messaging: "{{.CustomVariables.message_broker | default "nats"}}"
+  database: "{{.CustomVariables.database_driver | default "postgres"}}"
+  cache: "redis"
+  service_mesh: "{{.CustomVariables.service_mesh | default "istio"}}"
+
+# Development configuration
+development:
+  auto_reload: true
+  debug_mode: true
+  profiling: true
+  hot_reload_port: 8090
+
+# Code generation settings
+generation:
+  proto:
+    enabled: true
+    output_dir: "."
+    go_package_prefix: "{{.ModuleName}}"
+
+  mocks:
+    enabled: true
+    output_dir: "mocks"
+    interfaces:
+      - "internal/services"
+      - "internal/repository"
+
+  docs:
+    enabled: true
+    output_dir: "docs/api"
+    format: "openapi"
+
+# Testing configuration
+testing:
+  unit:
+    coverage_threshold: 80
+    race_detection: true
+
+  integration:
+    enabled: true
+    database: "postgres"
+    message_broker: "{{.CustomVariables.message_broker | default "nats"}}"
+
+  e2e:
+    enabled: true
+    environment: "docker-compose"
+
+# Build configuration
+build:
+  binary_name: "{{.CustomVariables.service_name | default "user"}}"
+  output_dir: "bin"
+  ldflags:
+    - "-X main.version={{.Version}}"
+    - "-X main.buildTime={{.BuildTime}}"
+    - "-X main.gitCommit={{.GitCommit}}"
+
+# Docker configuration
+docker:
+  registry: "{{.CustomVariables.docker_registry | default "localhost:5000"}}"
+  image_name: "{{.ProjectName | lower}}"
+  dockerfile: "services/{{.CustomVariables.service_name | default "user"}}/Dockerfile"
+  multi_stage: true
+  base_image: "alpine:latest"
+  build_args:
+    - "GO_VERSION=1.22"
+
+# Kubernetes deployment
+kubernetes:
+  namespace: "{{.CustomVariables.namespace | default "default"}}"
+  manifests_dir: "deployments/kubernetes"
+
+  service:
+    type: "ClusterIP"
+    grpc_port: {{.CustomVariables.grpc_port | default "9090"}}
+    http_port: {{.CustomVariables.http_port | default "8080"}}
+
+  deployment:
+    replicas: 3
+    strategy: "RollingUpdate"
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+
+  ingress:
+    enabled: true
+    class: "nginx"
+    tls: false
+
+# Helm configuration
+helm:
+  chart_dir: "deployments/helm"
+  values_file: "deployments/helm/values.yaml"
+
+  default_values:
+    image:
+      repository: "{{.CustomVariables.docker_registry | default "localhost:5000"}}/{{.ProjectName | lower}}"
+      tag: "latest"
+      pullPolicy: "IfNotPresent"
+
+    service:
+      type: "ClusterIP"
+      grpcPort: {{.CustomVariables.grpc_port | default "9090"}}
+      httpPort: {{.CustomVariables.http_port | default "8080"}}
+
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+
+# Database configuration
+database:
+  driver: "{{.CustomVariables.database_driver | default "postgres"}}"
+  migrations_dir: "tools/migrations"
+
+  development:
+    host: "localhost"
+    port: 5432
+    name: "{{.ProjectName | lower}}_db"
+    user: "{{.ProjectName | lower}}_user"
+    password: "{{.ProjectName | lower}}_password"
+
+  test:
+    name: "{{.ProjectName | lower}}_test_db"
+
+# Message broker configuration
+message_broker:
+  type: "{{.CustomVariables.message_broker | default "nats"}}"
+
+{{- if eq (.CustomVariables.message_broker | default "nats") "nats"}}
+  nats:
+    url: "nats://localhost:4222"
+    cluster_id: "{{.ProjectName | lower}}-cluster"
+    subjects:
+      - "{{.ProjectName | lower}}.{{.CustomVariables.service_name | default "user"}}.events"
+      - "{{.ProjectName | lower}}.{{.CustomVariables.service_name | default "user"}}.commands"
+
+{{- else if eq (.CustomVariables.message_broker | default "nats") "kafka"}}
+  kafka:
+    brokers: ["localhost:9092"]
+    consumer_group: "{{.ProjectName | lower}}-consumers"
+    topics:
+      - "{{.ProjectName | lower}}-{{.CustomVariables.service_name | default "user"}}-events"
+      - "{{.ProjectName | lower}}-{{.CustomVariables.service_name | default "user"}}-commands"
+
+{{- else if eq (.CustomVariables.message_broker | default "nats") "rabbitmq"}}
+  rabbitmq:
+    url: "amqp://guest:guest@localhost:5672/"
+    exchange: "{{.ProjectName | lower}}-exchange"
+    queues:
+      - "{{.ProjectName | lower}}.{{.CustomVariables.service_name | default "user"}}.events"
+      - "{{.ProjectName | lower}}.{{.CustomVariables.service_name | default "user"}}.commands"
+{{- end}}
+
+# Observability configuration
+observability:
+  logging:
+    level: "info"
+    format: "json"
+
+  metrics:
+    enabled: true
+    path: "/metrics"
+    namespace: "{{.ProjectName | lower}}"
+
+  tracing:
+    enabled: true
+    jaeger_endpoint: "http://localhost:14268/api/traces"
+    sample_rate: 1.0
+
+# Security configuration
+security:
+  tls:
+    enabled: false
+    cert_file: "/etc/ssl/certs/server.crt"
+    key_file: "/etc/ssl/private/server.key"
+
+  cors:
+    enabled: true
+    allowed_origins: ["*"]
+    allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 100
+
+# Component templates available for generation
+components:
+  service:
+    description: "Business logic service"
+    template: "service.go.tmpl"
+    target_dir: "services/{{.CustomVariables.service_name | default "user"}}/internal/services"
+
+  grpc_handler:
+    description: "gRPC handler implementation"
+    template: "grpc_handler.go.tmpl"
+    target_dir: "services/{{.CustomVariables.service_name | default "user"}}/internal/handlers"
+
+  http_handler:
+    description: "HTTP REST handler (gRPC-Gateway)"
+    template: "http_handler.go.tmpl"
+    target_dir: "services/{{.CustomVariables.service_name | default "user"}}/internal/handlers"
+
+  repository:
+    description: "Data access layer"
+    template: "repository.go.tmpl"
+    target_dir: "services/{{.CustomVariables.service_name | default "user"}}/internal/repository"
+
+  model:
+    description: "Data model definition"
+    template: "model.go.tmpl"
+    target_dir: "services/{{.CustomVariables.service_name | default "user"}}/internal/models"
+
+  event_handler:
+    description: "Event handler for message processing"
+    template: "event_handler.go.tmpl"
+    target_dir: "shared/events"
+
+  middleware:
+    description: "Shared middleware component"
+    template: "middleware.go.tmpl"
+    target_dir: "shared/middleware"
+
+  circuit_breaker:
+    description: "Circuit breaker middleware"
+    template: "circuit_breaker.go.tmpl"
+    target_dir: "shared/middleware"
+
+  health_check:
+    description: "Health check handler"
+    template: "health_check.go.tmpl"
+    target_dir: "services/{{.CustomVariables.service_name | default "user"}}/internal/handlers"
+
+  proto_service:
+    description: "Protocol buffer service definition"
+    template: "proto_service.proto.tmpl"
+    target_dir: "api/proto"
+
+# Deployment environments
+environments:
+  development:
+    database_url: "postgres://{{.ProjectName | lower}}_user:{{.ProjectName | lower}}_password@localhost:5432/{{.ProjectName | lower}}_db?sslmode=disable"
+    redis_url: "redis://localhost:6379/0"
+    log_level: "debug"
+
+  staging:
+    database_url: "${DATABASE_URL}"
+    redis_url: "${REDIS_URL}"
+    log_level: "info"
+
+  production:
+    database_url: "${DATABASE_URL}"
+    redis_url: "${REDIS_URL}"
+    log_level: "warn"
+
+# Tools and utilities
+tools:
+  migrate:
+    enabled: true
+    source: "file://tools/migrations"
+
+  buf:
+    enabled: true
+    config: "buf.yaml"
+
+  golangci-lint:
+    enabled: true
+    config: ".golangci.yml"
+
+# Custom variables for this project
+variables:
+  service_name: "{{.CustomVariables.service_name | default "user"}}"
+  grpc_port: "{{.CustomVariables.grpc_port | default "9090"}}"
+  http_port: "{{.CustomVariables.http_port | default "8080"}}"
+  metrics_port: "{{.CustomVariables.metrics_port | default "2112"}}"
+  database_driver: "{{.CustomVariables.database_driver | default "postgres"}}"
+  message_broker: "{{.CustomVariables.message_broker | default "nats"}}"
+  service_mesh: "{{.CustomVariables.service_mesh | default "istio"}}"
+  namespace: "{{.CustomVariables.namespace | default "default"}}"
+
+# Foundry CLI commands shortcuts
+commands:
+  dev: "make run-dev"
+  test: "make test-all"
+  build: "make build"
+  deploy: "make k8s-deploy"
+  logs: "make k8s-logs"

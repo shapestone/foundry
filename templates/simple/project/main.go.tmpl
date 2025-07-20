@@ -1,0 +1,24 @@
+// {{.ProjectName}} - {{.Description}}
+package main
+
+import "fmt"
+
+{{- if .Author}}
+// Author: {{.Author}}
+{{- end}}
+{{- if .Year}}
+// Year: {{.Year}}
+{{- end}}
+
+func main() {
+	fmt.Println("🚀 Welcome to {{.ProjectName}}!")
+	{{- if .Description}}
+	fmt.Println("📝 {{.Description}}")
+	{{- end}}
+	{{- if .Author}}
+	fmt.Println("👨‍💻 Created by {{.Author}}")
+	{{- end}}
+
+	// TODO: Add your application logic here
+	fmt.Println("✨ Ready to build something amazing!")
+}

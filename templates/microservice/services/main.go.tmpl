@@ -1,0 +1,458 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/sdk/resource"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
+
+	"{{.ModuleName}}/api/proto/{{.CustomVariables.service_name | default "user"}}"
+	"{{.ModuleName}}/services/{{.CustomVariables.service_name | default "user"}}/internal/handlers"
+	"{{.ModuleName}}/services/{{.CustomVariables.service_name | default "user"}}/internal/repository"
+	"{{.ModuleName}}/services/{{.CustomVariables.service_name | default "user"}}/internal/services"
+	"{{.ModuleName}}/shared/config"
+	"{{.ModuleName}}/shared/middleware"
+	"{{.ModuleName}}/shared/observability"
+)
+
+// Build information - populated by ldflags during build
+var (
+	version   = "dev"
+	buildTime = "unknown"
+	gitCommit = "none"
+)
+
+func main() {
+	// Initialize logger
+	logger := observability.NewLogger()
+	defer logger.Sync()
+
+	logger.Info("Starting {{.CustomVariables.service_name | title}} Service",
+		zap.String("version", version),
+		zap.String("build_time", buildTime),
+		zap.String("git_commit", gitCommit),
+	)
+
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Fatal("Failed to load configuration", zap.Error(err))
+	}
+
+	// Initialize tracing
+	tp, err := initTracer(cfg)
+	if err != nil {
+		logger.Fatal("Failed to initialize tracer", zap.Error(err))
+	}
+	defer func() {
+		if err := tp.Shutdown(context.Background()); err != nil {
+			logger.Error("Error shutting down tracer provider", zap.Error(err))
+		}
+	}()
+
+	// Initialize metrics
+	metrics := observability.NewMetrics(cfg.Service.Name)
+
+	// Initialize dependencies
+	deps, err := initDependencies(cfg, logger)
+	if err != nil {
+		logger.Fatal("Failed to initialize dependencies", zap.Error(err))
+	}
+	defer deps.Close()
+
+	// Create service instances
+	{{.CustomVariables.service_name | snake_case}}Repo := repository.New{{.CustomVariables.service_name | title}}Repository(deps.DB)
+	{{.CustomVariables.service_name | snake_case}}Service := services.New{{.CustomVariables.service_name | title}}Service({{.CustomVariables.service_name | snake_case}}Repo)
+
+	// Create handlers
+	grpcHandler := handlers.New{{.CustomVariables.service_name | title}}GRPCHandler({{.CustomVariables.service_name | snake_case}}Service, logger)
+
+	// Create servers
+	grpcServer := createGRPCServer(cfg, grpcHandler, logger, metrics)
+	httpServer := createHTTPServer(cfg, logger, metrics)
+	metricsServer := createMetricsServer(cfg)
+
+	// Start servers
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var wg sync.WaitGroup
+
+	// Start gRPC server
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := startGRPCServer(ctx, grpcServer, cfg.Server.GRPCPort, logger); err != nil {
+			logger.Error("gRPC server error", zap.Error(err))
+			cancel()
+		}
+	}()
+
+	// Start HTTP gateway server
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := startHTTPServer(ctx, httpServer, cfg, logger); err != nil {
+			logger.Error("HTTP server error", zap.Error(err))
+			cancel()
+		}
+	}()
+
+	// Start metrics server
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := startMetricsServer(ctx, metricsServer, cfg.Server.MetricsPort, logger); err != nil {
+			logger.Error("Metrics server error", zap.Error(err))
+			cancel()
+		}
+	}()
+
+	// Wait for shutdown signal
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case sig := <-shutdown:
+		logger.Info("Received shutdown signal", zap.String("signal", sig.String()))
+	case <-ctx.Done():
+		logger.Info("Context cancelled, shutting down")
+	}
+
+	// Graceful shutdown
+	logger.Info("Shutting down servers...")
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
+	defer shutdownCancel()
+
+	// Stop gRPC server
+	go func() {
+		grpcServer.GracefulStop()
+		logger.Info("gRPC server stopped")
+	}()
+
+	// Stop HTTP server
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		logger.Error("HTTP server shutdown error", zap.Error(err))
+	} else {
+		logger.Info("HTTP server stopped")
+	}
+
+	// Stop metrics server
+	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+		logger.Error("Metrics server shutdown error", zap.Error(err))
+	} else {
+		logger.Info("Metrics server stopped")
+	}
+
+	// Wait for all goroutines to finish
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		logger.Info("All servers stopped gracefully")
+	case <-shutdownCtx.Done():
+		logger.Warn("Shutdown timeout exceeded")
+	}
+}
+
+// Dependencies holds all external dependencies
+type Dependencies struct {
+	DB           repository.Database
+	Cache        repository.Cache
+	MessageBroker repository.MessageBroker
+}
+
+// Close closes all dependencies
+func (d *Dependencies) Close() error {
+	var errs []error
+
+	if d.DB != nil {
+		if err := d.DB.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if d.Cache != nil {
+		if err := d.Cache.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if d.MessageBroker != nil {
+		if err := d.MessageBroker.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("errors closing dependencies: %v", errs)
+	}
+
+	return nil
+}
+
+// initDependencies initializes all external dependencies
+func initDependencies(cfg *config.Config, logger *zap.Logger) (*Dependencies, error) {
+	deps := &Dependencies{}
+
+	// Initialize database
+	db, err := repository.NewDatabase(cfg.Database)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize database: %w", err)
+	}
+	deps.DB = db
+
+	// Initialize cache
+	cache, err := repository.NewCache(cfg.Redis)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize cache: %w", err)
+	}
+	deps.Cache = cache
+
+	// Initialize message broker
+	broker, err := repository.NewMessageBroker(cfg.MessageBroker)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize message broker: %w", err)
+	}
+	deps.MessageBroker = broker
+
+	logger.Info("Dependencies initialized successfully")
+	return deps, nil
+}
+
+// createGRPCServer creates and configures the gRPC server
+func createGRPCServer(cfg *config.Config, handler *handlers.{{.CustomVariables.service_name | title}}GRPCHandler, logger *zap.Logger, metrics *observability.Metrics) *grpc.Server {
+	// Create gRPC server with middleware
+	opts := []grpc.ServerOption{
+		grpc.ChainUnaryInterceptor(
+			middleware.UnaryLoggingInterceptor(logger),
+			middleware.UnaryMetricsInterceptor(metrics),
+			middleware.UnaryTracingInterceptor(),
+			middleware.UnaryRecoveryInterceptor(logger),
+			middleware.UnaryValidationInterceptor(),
+		),
+		grpc.ChainStreamInterceptor(
+			middleware.StreamLoggingInterceptor(logger),
+			middleware.StreamMetricsInterceptor(metrics),
+			middleware.StreamTracingInterceptor(),
+			middleware.StreamRecoveryInterceptor(logger),
+		),
+	}
+
+	server := grpc.NewServer(opts...)
+
+	// Register services
+	{{.CustomVariables.service_name | snake_case}}.Register{{.CustomVariables.service_name | title}}ServiceServer(server, handler)
+
+	// Register health service
+	healthServer := health.NewServer()
+	grpc_health_v1.RegisterHealthServer(server, healthServer)
+	healthServer.SetServingStatus("{{.CustomVariables.service_name | snake_case}}", grpc_health_v1.HealthCheckResponse_SERVING)
+
+	// Enable reflection for development
+	if cfg.Environment == "development" {
+		reflection.Register(server)
+	}
+
+	return server
+}
+
+// createHTTPServer creates the HTTP gateway server
+func createHTTPServer(cfg *config.Config, logger *zap.Logger, metrics *observability.Metrics) *http.Server {
+	mux := runtime.NewServeMux(
+		runtime.WithIncomingHeaderMatcher(func(key string) (string, bool) {
+			switch key {
+			case "X-Request-ID", "X-Correlation-ID":
+				return key, true
+			default:
+				return runtime.DefaultHeaderMatcher(key)
+			}
+		}),
+	)
+
+	// Create HTTP server with middleware
+	handler := middleware.ChainHTTP(
+		mux,
+		middleware.HTTPLogging(logger),
+		middleware.HTTPMetrics(metrics),
+		middleware.HTTPTracing(),
+		middleware.HTTPRecovery(logger),
+		middleware.CORS(cfg.CORS),
+		middleware.RateLimit(cfg.RateLimit),
+	)
+
+	return &http.Server{
+		Handler:      handler,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
+		IdleTimeout:  cfg.Server.IdleTimeout,
+	}
+}
+
+// createMetricsServer creates the Prometheus metrics server
+func createMetricsServer(cfg *config.Config) *http.Server {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+
+	// Health check endpoint for metrics server
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
+	return &http.Server{
+		Handler:      mux,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+}
+
+// startGRPCServer starts the gRPC server
+func startGRPCServer(ctx context.Context, server *grpc.Server, port int, logger *zap.Logger) error {
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return fmt.Errorf("failed to listen on port %d: %w", port, err)
+	}
+
+	logger.Info("gRPC server starting", zap.Int("port", port))
+
+	// Start server in goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		if err := server.Serve(lis); err != nil {
+			errCh <- err
+		}
+	}()
+
+	// Wait for context cancellation or server error
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-errCh:
+		return err
+	}
+}
+
+// startHTTPServer starts the HTTP gateway server
+func startHTTPServer(ctx context.Context, server *http.Server, cfg *config.Config, logger *zap.Logger) error {
+	// Register gRPC gateway
+	conn, err := grpc.DialContext(
+		ctx,
+		fmt.Sprintf("localhost:%d", cfg.Server.GRPCPort),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to dial gRPC server: %w", err)
+	}
+	defer conn.Close()
+
+	mux := server.Handler.(*runtime.ServeMux)
+	if err := {{.CustomVariables.service_name | snake_case}}.Register{{.CustomVariables.service_name | title}}ServiceHandler(ctx, mux, conn); err != nil {
+		return fmt.Errorf("failed to register gateway: %w", err)
+	}
+
+	server.Addr = fmt.Sprintf(":%d", cfg.Server.HTTPPort)
+
+	logger.Info("HTTP server starting", zap.Int("port", cfg.Server.HTTPPort))
+
+	// Start server in goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- err
+		}
+	}()
+
+	// Wait for context cancellation or server error
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-errCh:
+		return err
+	}
+}
+
+// startMetricsServer starts the Prometheus metrics server
+func startMetricsServer(ctx context.Context, server *http.Server, port int, logger *zap.Logger) error {
+	server.Addr = fmt.Sprintf(":%d", port)
+
+	logger.Info("Metrics server starting", zap.Int("port", port))
+
+	// Start server in goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- err
+		}
+	}()
+
+	// Wait for context cancellation or server error
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-errCh:
+		return err
+	}
+}
+
+// initTracer initializes OpenTelemetry tracing
+func initTracer(cfg *config.Config) (*tracesdk.TracerProvider, error) {
+	if !cfg.Observability.Tracing.Enabled {
+		return tracesdk.NewTracerProvider(), nil
+	}
+
+	// Create Jaeger exporter
+	exp, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(cfg.Observability.Tracing.JaegerEndpoint)))
+	if err != nil {
+		return nil, err
+	}
+
+	// Create resource
+	res, err := resource.New(
+		context.Background(),
+		resource.WithAttributes(
+			semconv.ServiceNameKey.String(cfg.Service.Name),
+			semconv.ServiceVersionKey.String(version),
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create tracer provider
+	tp := tracesdk.NewTracerProvider(
+		tracesdk.WithBatcher(exp),
+		tracesdk.WithResource(res),
+		tracesdk.WithSampler(tracesdk.TraceIDRatioBased(cfg.Observability.Tracing.SampleRate)),
+	)
+
+	// Set global tracer provider
+	otel.SetTracerProvider(tp)
+
+	return tp, nil
+}

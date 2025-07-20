@@ -1,0 +1,97 @@
+name: "hexagonal"
+version: "1.0.0"
+author: "Foundry Team"
+description: "Hexagonal architecture (Ports & Adapters) layout with pure domain core and dependency inversion"
+min_foundry_version: "0.5.0"
+
+structure:
+  directories:
+    - path: "cmd"
+      description: "Application entry points"
+    - path: "internal/core/domain"
+      description: "Pure domain entities and value objects"
+    - path: "internal/core/ports"
+      description: "Port interfaces (primary and secondary)"
+    - path: "internal/core/services"
+      description: "Domain business logic services"
+    - path: "internal/adapters/primary"
+      description: "Primary adapters (HTTP, gRPC, CLI)"
+    - path: "internal/adapters/secondary"
+      description: "Secondary adapters (database, external APIs)"
+    - path: "pkg"
+      description: "Public packages"
+    - path: "docs"
+      description: "Documentation"
+    - path: "scripts"
+      description: "Build and deployment scripts"
+
+  files:
+    - template: "project/main.go.tmpl"
+      target: "cmd/main.go"
+    - template: "project/go.mod.tmpl"
+      target: "go.mod"
+    - template: "project/README.md.tmpl"
+      target: "README.md"
+    - template: "project/Makefile.tmpl"
+      target: "Makefile"
+    - template: "project/Dockerfile.tmpl"
+      target: "Dockerfile"
+    - template: "project/docker-compose.yml.tmpl"
+      target: "docker-compose.yml"
+    - template: "project/gitignore.tmpl"
+      target: ".gitignore"
+    - template: "project/.env.example.tmpl"
+      target: ".env.example"
+    - template: "project/foundry.yaml.tmpl"
+      target: "foundry.yaml"
+
+dependencies:
+  - "github.com/gorilla/mux"
+  - "github.com/joho/godotenv"
+
+features:
+  - "hexagonal-architecture"
+  - "ports-and-adapters"
+  - "domain-driven-design"
+  - "dependency-inversion"
+  - "http-server"
+  - "gorilla-mux-router"
+  - "docker"
+  - "makefile"
+  - "env-config"
+  - "graceful-shutdown"
+
+variables:
+  - name: "http_port"
+    default: "8080"
+    description: "HTTP server port"
+  - name: "read_timeout"
+    default: "15s"
+    description: "HTTP read timeout"
+  - name: "write_timeout"
+    default: "15s"
+    description: "HTTP write timeout"
+  - name: "idle_timeout"
+    default: "60s"
+    description: "HTTP idle timeout"
+  - name: "github_username"
+    default: ""
+    description: "GitHub username for module path"
+    required: false
+
+components:
+  entity:
+    template: "components/entity.go.tmpl"
+    target_dir: "internal/core/domain"
+  port:
+    template: "components/port.go.tmpl"
+    target_dir: "internal/core/ports"
+  service:
+    template: "components/service.go.tmpl"
+    target_dir: "internal/core/services"
+  http_adapter:
+    template: "components/http_adapter.go.tmpl"
+    target_dir: "internal/adapters/primary"
+  repository_adapter:
+    template: "components/repository_adapter.go.tmpl"
+    target_dir: "internal/adapters/secondary"

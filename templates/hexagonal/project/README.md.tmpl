@@ -1,0 +1,140 @@
+# {{.project_name}}
+
+A Go application built with **Hexagonal Architecture** (Ports & Adapters pattern) for maximum testability and adaptability.
+
+## Architecture Overview
+
+This project follows the Hexagonal Architecture pattern, which isolates the business logic from external concerns through well-defined ports and adapters.
+
+```
+{{.project_name}}/
+├── cmd/                           # Application entry points
+├── internal/
+│   ├── core/                      # Business logic (no external dependencies)
+│   │   ├── domain/                # Entities and value objects
+│   │   ├── ports/                 # Port interfaces
+│   │   └── services/              # Domain services
+│   └── adapters/                  # Infrastructure implementations
+│       ├── primary/               # Driving adapters (HTTP, CLI)
+│       └── secondary/             # Driven adapters (DB, external APIs)
+├── pkg/                           # Public packages
+└── docs/                          # Documentation
+```
+
+## Core Principles
+
+- **Domain Isolation**: The core domain has zero dependencies on external frameworks
+- **Dependency Inversion**: All dependencies point inward toward the domain
+- **Port-Driven Development**: Business logic communicates through well-defined interfaces
+- **Adapter Swapping**: Easy to change infrastructure without affecting business logic
+
+## Quick Start
+
+### Prerequisites
+
+- Go 1.21 or later
+- Docker (optional)
+
+### Running the Application
+
+```bash
+# Install dependencies
+go mod download
+
+# Run the application
+go run cmd/main.go
+
+# Or build and run
+make build
+./bin/{{.project_name}}
+```
+
+### Using Docker
+
+```bash
+# Build and run with Docker Compose
+docker-compose up --build
+
+# Or build Docker image
+make docker-build
+docker run -p {{.http_port}}:{{.http_port}} {{.project_name}}
+```
+
+## Development
+
+### Adding New Features
+
+1. **Define Domain Logic**: Start with entities and services in `internal/core/`
+2. **Create Ports**: Define interfaces in `internal/core/ports/`
+3. **Implement Adapters**: Create concrete implementations in `internal/adapters/`
+4. **Wire Dependencies**: Connect components in `cmd/main.go`
+
+### Example: Adding a New Feature
+
+```bash
+# Add a domain entity
+foundry add entity User
+
+# Add ports for the feature
+foundry add port UserService
+
+# Add HTTP adapter
+foundry add http_adapter UserHandler
+
+# Add repository adapter
+foundry add repository_adapter UserRepository
+```
+
+### Testing
+
+The hexagonal architecture makes testing straightforward:
+
+```bash
+# Run all tests
+make test
+
+# Run tests with coverage
+make test-coverage
+
+# Test domain logic (no external dependencies)
+go test ./internal/core/...
+
+# Test adapters with mocks/stubs
+go test ./internal/adapters/...
+```
+
+## Architecture Benefits
+
+- **Testability**: Domain logic can be tested without any infrastructure
+- **Flexibility**: Easy to swap databases, web frameworks, or external services
+- **Maintainability**: Clear separation between business logic and technical concerns
+- **Technology Independence**: Business rules don't depend on frameworks
+
+## Configuration
+
+Environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HTTP_PORT` | `{{.http_port}}` | HTTP server port |
+| `READ_TIMEOUT` | `{{.read_timeout}}` | HTTP read timeout |
+| `WRITE_TIMEOUT` | `{{.write_timeout}}` | HTTP write timeout |
+| `IDLE_TIMEOUT` | `{{.idle_timeout}}` | HTTP idle timeout |
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check endpoint |
+| `GET` | `/` | Welcome message |
+
+## Contributing
+
+1. Follow the hexagonal architecture principles
+2. Keep the domain core free of external dependencies
+3. Write tests for both domain logic and adapters
+4. Update documentation for new features
+
+## License
+
+[Your License Here]

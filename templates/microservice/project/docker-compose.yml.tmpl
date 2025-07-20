@@ -1,0 +1,213 @@
+version: '3.8'
+
+services:
+  # Primary service
+  {{.CustomVariables.service_name | default "user"}}-service:
+    build:
+      context: .
+      dockerfile: services/{{.CustomVariables.service_name | default "user"}}/Dockerfile
+    ports:
+      - "{{.CustomVariables.grpc_port | default "9090"}}:{{.CustomVariables.grpc_port | default "9090"}}"
+      - "{{.CustomVariables.http_port | default "8080"}}:{{.CustomVariables.http_port | default "8080"}}"
+      - "{{.CustomVariables.metrics_port | default "2112"}}:{{.CustomVariables.metrics_port | default "2112"}}"
+    environment:
+      - GRPC_PORT={{.CustomVariables.grpc_port | default "9090"}}
+      - HTTP_PORT={{.CustomVariables.http_port | default "8080"}}
+      - METRICS_PORT={{.CustomVariables.metrics_port | default "2112"}}
+      - DATABASE_URL=postgres://{{.ProjectName | lower}}_user:{{.ProjectName | lower}}_password@postgres:5432/{{.ProjectName | lower}}_db?sslmode=disable
+      - REDIS_URL=redis://redis:6379
+      {{- if eq (.CustomVariables.message_broker | default "nats") "nats"}}
+      - NATS_URL=nats://nats:4222
+      {{- else if eq (.CustomVariables.message_broker | default "nats") "kafka"}}
+      - KAFKA_BROKERS=kafka:9092
+      {{- else if eq (.CustomVariables.message_broker | default "nats") "rabbitmq"}}
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      {{- end}}
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - LOG_LEVEL=debug
+    depends_on:
+      - postgres
+      - redis
+      {{- if eq (.CustomVariables.message_broker | default "nats") "nats"}}
+      - nats
+      {{- else if eq (.CustomVariables.message_broker | default "nats") "kafka"}}
+      - kafka
+      {{- else if eq (.CustomVariables.message_broker | default "nats") "rabbitmq"}}
+      - rabbitmq
+      {{- end}}
+      - jaeger
+    networks:
+      - {{.ProjectName | lower}}-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=:{{.CustomVariables.grpc_port | default "9090"}}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB={{.ProjectName | lower}}_db
+      - POSTGRES_USER={{.ProjectName | lower}}_user
+      - POSTGRES_PASSWORD={{.ProjectName | lower}}_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./tools/migrations/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - {{.ProjectName | lower}}-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U {{.ProjectName | lower}}_user -d {{.ProjectName | lower}}_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - {{.ProjectName | lower}}-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+{{- if eq (.CustomVariables.message_broker | default "nats") "nats"}}
+  # NATS Message Broker
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      - "4222:4222"
+      - "8222:8222"  # HTTP monitoring
+    command:
+      - "--http_port"
+      - "8222"
+      - "--js"  # Enable JetStream
+    volumes:
+      - nats_data:/data
+    networks:
+      - {{.ProjectName | lower}}-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+{{- else if eq (.CustomVariables.message_broker | default "nats") "kafka"}}
+  # Zookeeper (required for Kafka)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - {{.ProjectName | lower}}-network
+    restart: unless-stopped
+
+  # Kafka Message Broker
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - {{.ProjectName | lower}}-network
+    restart: unless-stopped
+
+{{- else if eq (.CustomVariables.message_broker | default "nats") "rabbitmq"}}
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"  # Management UI
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - {{.ProjectName | lower}}-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+{{- end}}
+
+  # Distributed Tracing
+  jaeger:
+    image: jaegertracing/all-in-one:1.51
+    ports:
+      - "14268:14268"  # HTTP collector
+      - "16686:16686"  # UI
+      - "14250:14250"  # gRPC collector
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - {{.ProjectName | lower}}-network
+    restart: unless-stopped
+
+  # Metrics Collection
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deployments/docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - {{.ProjectName | lower}}-network
+    restart: unless-stopped
+
+  # Metrics Visualization
+  grafana:
+    image: grafana/grafana:10.1.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deployments/docker/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./deployments/docker/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - {{.ProjectName | lower}}-network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  # Log Aggregation (Optional)
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.9.

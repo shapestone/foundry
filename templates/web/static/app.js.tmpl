@@ -1,0 +1,684 @@
+/**
+ * {{.ProjectName}} - Main JavaScript Application
+ * A modern, vanilla JavaScript application with no dependencies
+ */
+
+(function() {
+    'use strict';
+
+    // Application namespace
+    const App = {
+        // Configuration
+        config: {
+            debug: window.location.hostname === 'localhost',
+            apiBaseUrl: '/api/v1',
+            animationDuration: 300,
+            debounceDelay: 300
+        },
+
+        // State management
+        state: {
+            navOpen: false,
+            loading: false,
+            theme: localStorage.getItem('theme') || 'light'
+        },
+
+        // Initialize the application
+        init() {
+            this.setupEventListeners();
+            this.setupNavigation();
+            this.setupForms();
+            this.setupAlerts();
+            this.setupScrollEffects();
+            this.setupTheme();
+            this.setupAccessibility();
+            this.log('Application initialized');
+        },
+
+        // Event listeners setup
+        setupEventListeners() {
+            // DOM Content Loaded
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => {
+                    this.onDOMReady();
+                });
+            } else {
+                this.onDOMReady();
+            }
+
+            // Window events
+            window.addEventListener('resize', this.debounce(() => {
+                this.handleResize();
+            }, this.config.debounceDelay));
+
+            window.addEventListener('scroll', this.throttle(() => {
+                this.handleScroll();
+            }, 16)); // ~60fps
+
+            // Keyboard navigation
+            document.addEventListener('keydown', (e) => {
+                this.handleKeyboard(e);
+            });
+
+            // Click outside to close menus
+            document.addEventListener('click', (e) => {
+                this.handleOutsideClick(e);
+            });
+        },
+
+        // DOM ready handler
+        onDOMReady() {
+            this.log('DOM ready');
+            this.updateActiveNavLink();
+            this.setupLazyLoading();
+            this.setupAnimations();
+        },
+
+        // Navigation setup
+        setupNavigation() {
+            const navToggle = document.getElementById('nav-toggle');
+            const navMenu = document.getElementById('nav-menu');
+
+            if (navToggle && navMenu) {
+                navToggle.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.toggleNavigation();
+                });
+
+                // Close nav on link click (mobile)
+                const navLinks = navMenu.querySelectorAll('.nav-link');
+                navLinks.forEach(link => {
+                    link.addEventListener('click', () => {
+                        if (window.innerWidth <= 768) {
+                            this.closeNavigation();
+                        }
+                    });
+                });
+            }
+        },
+
+        // Toggle mobile navigation
+        toggleNavigation() {
+            const navToggle = document.getElementById('nav-toggle');
+            const navMenu = document.getElementById('nav-menu');
+
+            if (navToggle && navMenu) {
+                this.state.navOpen = !this.state.navOpen;
+
+                navToggle.classList.toggle('active', this.state.navOpen);
+                navMenu.classList.toggle('active', this.state.navOpen);
+
+                // Prevent body scroll when nav is open
+                document.body.style.overflow = this.state.navOpen ? 'hidden' : '';
+
+                // Accessibility
+                navToggle.setAttribute('aria-expanded', this.state.navOpen);
+                navMenu.setAttribute('aria-hidden', !this.state.navOpen);
+            }
+        },
+
+        // Close navigation
+        closeNavigation() {
+            if (this.state.navOpen) {
+                this.toggleNavigation();
+            }
+        },
+
+        // Update active navigation link
+        updateActiveNavLink() {
+            const currentPath = window.location.pathname;
+            const navLinks = document.querySelectorAll('.nav-link');
+
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === currentPath) {
+                    link.classList.add('active');
+                }
+            });
+        },
+
+        // Form handling setup
+        setupForms() {
+            const forms = document.querySelectorAll('form');
+
+            forms.forEach(form => {
+                // Add loading states
+                form.addEventListener('submit', (e) => {
+                    this.handleFormSubmit(e, form);
+                });
+
+                // Real-time validation
+                const inputs = form.querySelectorAll('input, textarea, select');
+                inputs.forEach(input => {
+                    input.addEventListener('blur', () => {
+                        this.validateField(input);
+                    });
+
+                    input.addEventListener('input', this.debounce(() => {
+                        this.clearFieldError(input);
+                    }, 300));
+                });
+            });
+
+            // Setup CSRF token for AJAX requests
+            this.setupCSRF();
+        },
+
+        // Handle form submission
+        handleFormSubmit(e, form) {
+            const submitBtn = form.querySelector('button[type="submit"]');
+
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                    </svg>
+                    Loading...
+                `;
+                submitBtn.style.opacity = '0.7';
+            }
+
+            // Re-enable after a delay (in case of server-side redirect)
+            setTimeout(() => {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = submitBtn.dataset.originalText || 'Submit';
+                    submitBtn.style.opacity = '1';
+                }
+            }, 3000);
+        },
+
+        // Field validation
+        validateField(field) {
+            const value = field.value.trim();
+            const type = field.type;
+            const required = field.required;
+
+            let isValid = true;
+            let message = '';
+
+            // Required validation
+            if (required && !value) {
+                isValid = false;
+                message = 'This field is required';
+            }
+
+            // Email validation
+            else if (type === 'email' && value) {
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(value)) {
+                    isValid = false;
+                    message = 'Please enter a valid email address';
+                }
+            }
+
+            // Minimum length validation
+            else if (field.hasAttribute('minlength')) {
+                const minLength = parseInt(field.getAttribute('minlength'));
+                if (value.length < minLength) {
+                    isValid = false;
+                    message = `Minimum ${minLength} characters required`;
+                }
+            }
+
+            this.showFieldValidation(field, isValid, message);
+            return isValid;
+        },
+
+        // Show field validation
+        showFieldValidation(field, isValid, message) {
+            this.clearFieldError(field);
+
+            if (!isValid && message) {
+                field.classList.add('error');
+
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'form-error';
+                errorDiv.textContent = message;
+                errorDiv.id = `${field.name}-error`;
+
+                field.parentNode.appendChild(errorDiv);
+
+                // Accessibility
+                field.setAttribute('aria-describedby', errorDiv.id);
+                field.setAttribute('aria-invalid', 'true');
+            } else {
+                field.classList.remove('error');
+                field.removeAttribute('aria-describedby');
+                field.removeAttribute('aria-invalid');
+            }
+        },
+
+        // Clear field error
+        clearFieldError(field) {
+            const existingError = field.parentNode.querySelector('.form-error');
+            if (existingError) {
+                existingError.remove();
+            }
+            field.classList.remove('error');
+        },
+
+        // Setup CSRF token for AJAX requests
+        setupCSRF() {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]');
+            if (csrfToken) {
+                // Set default headers for fetch requests
+                const originalFetch = window.fetch;
+                window.fetch = function(url, options = {}) {
+                    if (options.method && options.method.toUpperCase() !== 'GET') {
+                        options.headers = {
+                            'X-CSRF-Token': csrfToken.getAttribute('content'),
+                            ...options.headers
+                        };
+                    }
+                    return originalFetch(url, options);
+                };
+            }
+        },
+
+        // Alert handling setup
+        setupAlerts() {
+            // Auto-dismiss alerts
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(alert => {
+                // Auto-dismiss after 5 seconds
+                setTimeout(() => {
+                    this.dismissAlert(alert);
+                }, 5000);
+            });
+        },
+
+        // Dismiss alert
+        dismissAlert(alert) {
+            if (alert) {
+                alert.style.opacity = '0';
+                alert.style.transform = 'translateY(-10px)';
+
+                setTimeout(() => {
+                    alert.remove();
+                }, this.config.animationDuration);
+            }
+        },
+
+        // Scroll effects setup
+        setupScrollEffects() {
+            // Navbar background on scroll
+            const navbar = document.querySelector('.navbar');
+            if (navbar) {
+                this.handleScroll(); // Initial call
+            }
+
+            // Smooth scroll for anchor links
+            const anchorLinks = document.querySelectorAll('a[href^="#"]');
+            anchorLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    const targetId = link.getAttribute('href').substring(1);
+                    const targetElement = document.getElementById(targetId);
+
+                    if (targetElement) {
+                        e.preventDefault();
+                        this.smoothScrollTo(targetElement);
+                    }
+                });
+            });
+        },
+
+        // Handle scroll events
+        handleScroll() {
+            const navbar = document.querySelector('.navbar');
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+
+            if (navbar) {
+                if (scrollTop > 50) {
+                    navbar.style.background = 'rgba(255, 255, 255, 0.98)';
+                    navbar.style.boxShadow = '0 2px 20px rgba(0, 0, 0, 0.1)';
+                } else {
+                    navbar.style.background = 'rgba(255, 255, 255, 0.95)';
+                    navbar.style.boxShadow = 'none';
+                }
+            }
+
+            // Show/hide back-to-top button
+            this.toggleBackToTop(scrollTop > 300);
+        },
+
+        // Smooth scroll to element
+        smoothScrollTo(element, offset = 80) {
+            const targetPosition = element.offsetTop - offset;
+
+            window.scrollTo({
+                top: targetPosition,
+                behavior: 'smooth'
+            });
+        },
+
+        // Toggle back-to-top button
+        toggleBackToTop(show) {
+            let backToTop = document.getElementById('back-to-top');
+
+            if (show && !backToTop) {
+                backToTop = document.createElement('button');
+                backToTop.id = 'back-to-top';
+                backToTop.className = 'back-to-top';
+                backToTop.innerHTML = '↑';
+                backToTop.setAttribute('aria-label', 'Back to top');
+                backToTop.addEventListener('click', () => {
+                    this.smoothScrollTo(document.body, 0);
+                });
+                document.body.appendChild(backToTop);
+            }
+
+            if (backToTop) {
+                backToTop.style.display = show ? 'block' : 'none';
+            }
+        },
+
+        // Theme setup
+        setupTheme() {
+            const themeToggle = document.getElementById('theme-toggle');
+            if (themeToggle) {
+                themeToggle.addEventListener('click', () => {
+                    this.toggleTheme();
+                });
+            }
+
+            this.applyTheme(this.state.theme);
+        },
+
+        // Toggle theme
+        toggleTheme() {
+            this.state.theme = this.state.theme === 'light' ? 'dark' : 'light';
+            localStorage.setItem('theme', this.state.theme);
+            this.applyTheme(this.state.theme);
+        },
+
+        // Apply theme
+        applyTheme(theme) {
+            document.body.setAttribute('data-theme', theme);
+            const themeToggle = document.getElementById('theme-toggle');
+            if (themeToggle) {
+                themeToggle.textContent = theme === 'light' ? '🌙' : '☀️';
+            }
+        },
+
+        // Accessibility setup
+        setupAccessibility() {
+            // Focus management
+            this.setupFocusManagement();
+
+            // Skip link
+            this.setupSkipLink();
+
+            // Keyboard navigation
+            this.setupKeyboardNavigation();
+        },
+
+        // Focus management
+        setupFocusManagement() {
+            // Trap focus in modals
+            const modals = document.querySelectorAll('.modal');
+            modals.forEach(modal => {
+                this.trapFocus(modal);
+            });
+        },
+
+        // Setup skip link
+        setupSkipLink() {
+            if (!document.getElementById('skip-link')) {
+                const skipLink = document.createElement('a');
+                skipLink.id = 'skip-link';
+                skipLink.href = '#main-content';
+                skipLink.textContent = 'Skip to main content';
+                skipLink.className = 'skip-link';
+                skipLink.style.cssText = `
+                    position: absolute;
+                    top: -40px;
+                    left: 6px;
+                    background: #000;
+                    color: #fff;
+                    padding: 8px;
+                    text-decoration: none;
+                    border-radius: 4px;
+                    z-index: 9999;
+                    transition: top 0.3s;
+                `;
+
+                skipLink.addEventListener('focus', () => {
+                    skipLink.style.top = '6px';
+                });
+
+                skipLink.addEventListener('blur', () => {
+                    skipLink.style.top = '-40px';
+                });
+
+                document.body.insertBefore(skipLink, document.body.firstChild);
+            }
+        },
+
+        // Keyboard navigation setup
+        setupKeyboardNavigation() {
+            // ESC key handlers
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    this.closeNavigation();
+                    this.dismissAllAlerts();
+                }
+            });
+        },
+
+        // Handle keyboard events
+        handleKeyboard(e) {
+            // Tab navigation enhancement
+            if (e.key === 'Tab') {
+                document.body.classList.add('keyboard-navigation');
+            }
+        },
+
+        // Handle outside clicks
+        handleOutsideClick(e) {
+            const navMenu = document.getElementById('nav-menu');
+            const navToggle = document.getElementById('nav-toggle');
+
+            if (this.state.navOpen && navMenu && !navMenu.contains(e.target) && !navToggle.contains(e.target)) {
+                this.closeNavigation();
+            }
+        },
+
+        // Handle window resize
+        handleResize() {
+            // Close mobile nav on desktop
+            if (window.innerWidth > 768 && this.state.navOpen) {
+                this.closeNavigation();
+            }
+        },
+
+        // Setup lazy loading
+        setupLazyLoading() {
+            const images = document.querySelectorAll('img[data-src]');
+
+            if ('IntersectionObserver' in window) {
+                const imageObserver = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            const img = entry.target;
+                            img.src = img.dataset.src;
+                            img.removeAttribute('data-src');
+                            imageObserver.unobserve(img);
+                        }
+                    });
+                });
+
+                images.forEach(img => imageObserver.observe(img));
+            } else {
+                // Fallback for browsers without IntersectionObserver
+                images.forEach(img => {
+                    img.src = img.dataset.src;
+                    img.removeAttribute('data-src');
+                });
+            }
+        },
+
+        // Setup animations
+        setupAnimations() {
+            // Animate elements on scroll
+            const animatedElements = document.querySelectorAll('[data-animate]');
+
+            if ('IntersectionObserver' in window && animatedElements.length > 0) {
+                const animationObserver = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            const element = entry.target;
+                            const animation = element.dataset.animate;
+                            element.classList.add(`animate-${animation}`);
+                            animationObserver.unobserve(element);
+                        }
+                    });
+                }, { threshold: 0.1 });
+
+                animatedElements.forEach(el => animationObserver.observe(el));
+            }
+        },
+
+        // Dismiss all alerts
+        dismissAllAlerts() {
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(alert => this.dismissAlert(alert));
+        },
+
+        // Utility functions
+        debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        },
+
+        throttle(func, limit) {
+            let inThrottle;
+            return function(...args) {
+                if (!inThrottle) {
+                    func.apply(this, args);
+                    inThrottle = true;
+                    setTimeout(() => inThrottle = false, limit);
+                }
+            };
+        },
+
+        // Logging utility
+        log(...args) {
+            if (this.config.debug) {
+                console.log('[{{.ProjectName}}]', ...args);
+            }
+        },
+
+        // API utilities
+        async apiCall(endpoint, options = {}) {
+            const url = `${this.config.apiBaseUrl}${endpoint}`;
+
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API call failed: ${response.status}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                this.log('API call error:', error);
+                throw error;
+            }
+        }
+    };
+
+    // Global utility functions
+    window.closeAlert = function(alertId) {
+        const alert = document.getElementById(alertId);
+        App.dismissAlert(alert);
+    };
+
+    // Initialize the application
+    App.init();
+
+    // Export for debugging (development only)
+    if (App.config.debug) {
+        window.App = App;
+    }
+
+})();
+
+// Additional CSS for JavaScript-enhanced features
+const additionalCSS = `
+    .back-to-top {
+        position: fixed;
+        bottom: 2rem;
+        right: 2rem;
+        width: 3rem;
+        height: 3rem;
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        cursor: pointer;
+        font-size: 1.2rem;
+        z-index: 1000;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .back-to-top:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .keyboard-navigation *:focus {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+    }
+
+    .form-input.error,
+    .form-textarea.error,
+    .form-select.error {
+        border-color: var(--error);
+        box-shadow: 0 0 0 3px rgba(245, 101, 101, 0.1);
+    }
+
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(30px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .animate-fadeInUp {
+        animation: fadeInUp 0.6s ease-out forwards;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        * {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+        }
+    }
+`;
+
+// Inject additional CSS
+const style = document.createElement('style');
+style.textContent = additionalCSS;
+document.head.appendChild(style);

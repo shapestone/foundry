@@ -1,0 +1,392 @@
+package models
+
+import (
+	"time"
+	"strings"
+)
+
+// {{.ComponentName | title}} represents a {{.ComponentName | snake_case}} entity in the web application
+type {{.ComponentName | title}} struct {
+	ID        int64     `json:"id" db:"id"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+
+	// Add your {{.ComponentName | snake_case}} specific fields here
+	// Example fields for a typical web entity:
+	Name        string `json:"name" db:"name"`
+	Description string `json:"description" db:"description"`
+	Status      string `json:"status" db:"status"`
+	Slug        string `json:"slug" db:"slug"`
+
+	// SEO and web-specific fields
+	MetaTitle       string `json:"meta_title,omitempty" db:"meta_title"`
+	MetaDescription string `json:"meta_description,omitempty" db:"meta_description"`
+
+	// Display and ordering
+	DisplayOrder int    `json:"display_order" db:"display_order"`
+	IsPublished  bool   `json:"is_published" db:"is_published"`
+	IsFeatured   bool   `json:"is_featured" db:"is_featured"`
+
+	// Timestamps for web content
+	PublishedAt *time.Time `json:"published_at,omitempty" db:"published_at"`
+}
+
+// Create{{.ComponentName | title}}Request represents the request payload for creating a {{.ComponentName | snake_case}}
+type Create{{.ComponentName | title}}Request struct {
+	Name        string `json:"name" validate:"required,min=1,max=255"`
+	Description string `json:"description" validate:"max=1000"`
+	Status      string `json:"status" validate:"required,oneof=draft published archived"`
+
+	// Optional SEO fields
+	MetaTitle       string `json:"meta_title,omitempty" validate:"omitempty,max=60"`
+	MetaDescription string `json:"meta_description,omitempty" validate:"omitempty,max=160"`
+
+	// Display options
+	DisplayOrder int  `json:"display_order,omitempty"`
+	IsPublished  bool `json:"is_published"`
+	IsFeatured   bool `json:"is_featured"`
+}
+
+// Update{{.ComponentName | title}}Request represents the request payload for updating a {{.ComponentName | snake_case}}
+type Update{{.ComponentName | title}}Request struct {
+	Name        *string `json:"name,omitempty" validate:"omitempty,min=1,max=255"`
+	Description *string `json:"description,omitempty" validate:"omitempty,max=1000"`
+	Status      *string `json:"status,omitempty" validate:"omitempty,oneof=draft published archived"`
+
+	// Optional SEO fields
+	MetaTitle       *string `json:"meta_title,omitempty" validate:"omitempty,max=60"`
+	MetaDescription *string `json:"meta_description,omitempty" validate:"omitempty,max=160"`
+
+	// Display options
+	DisplayOrder *int  `json:"display_order,omitempty"`
+	IsPublished  *bool `json:"is_published,omitempty"`
+	IsFeatured   *bool `json:"is_featured,omitempty"`
+}
+
+// {{.ComponentName | title}}Filter represents filtering options for {{.ComponentName | snake_case}} queries
+type {{.ComponentName | title}}Filter struct {
+	// Search and filtering
+	Search   string `json:"search,omitempty"`
+	Status   string `json:"status,omitempty"`
+	Featured *bool  `json:"featured,omitempty"`
+
+	// Date filtering
+	CreatedAfter  *time.Time `json:"created_after,omitempty"`
+	CreatedBefore *time.Time `json:"created_before,omitempty"`
+
+	// Pagination
+	Page  int `json:"page" validate:"min=1"`
+	Limit int `json:"limit" validate:"min=1,max=100"`
+
+	// Sorting
+	SortBy    string `json:"sort_by" validate:"omitempty,oneof=id name created_at updated_at display_order"`
+	SortOrder string `json:"sort_order" validate:"omitempty,oneof=asc desc"`
+}
+
+// {{.ComponentName | title}}Response represents the response format for {{.ComponentName | snake_case}} operations
+type {{.ComponentName | title}}Response struct {
+	Data  []*{{.ComponentName | title}} `json:"data"`
+	Total int64                         `json:"total"`
+	Page  int                           `json:"page"`
+	Limit int                           `json:"limit"`
+}
+
+// {{.ComponentName | title}}Stats represents statistics for {{.ComponentName | snake_case | plural}}
+type {{.ComponentName | title}}Stats struct {
+	Total     int64 `json:"total"`
+	Published int64 `json:"published"`
+	Draft     int64 `json:"draft"`
+	Archived  int64 `json:"archived"`
+	Featured  int64 `json:"featured"`
+}
+
+// Form validation and conversion methods
+
+// Validate validates the Create{{.ComponentName | title}}Request
+func (r *Create{{.ComponentName | title}}Request) Validate() error {
+	// Basic validation
+	if strings.TrimSpace(r.Name) == "" {
+		return NewValidationError("name is required")
+	}
+
+	if len(r.Name) > 255 {
+		return NewValidationError("name must be less than 255 characters")
+	}
+
+	if len(r.Description) > 1000 {
+		return NewValidationError("description must be less than 1000 characters")
+	}
+
+	// Status validation
+	validStatuses := []string{"draft", "published", "archived"}
+	if !contains(validStatuses, r.Status) {
+		return NewValidationError("status must be one of: draft, published, archived")
+	}
+
+	// SEO validation
+	if len(r.MetaTitle) > 60 {
+		return NewValidationError("meta title must be less than 60 characters")
+	}
+
+	if len(r.MetaDescription) > 160 {
+		return NewValidationError("meta description must be less than 160 characters")
+	}
+
+	return nil
+}
+
+// Validate validates the Update{{.ComponentName | title}}Request
+func (r *Update{{.ComponentName | title}}Request) Validate() error {
+	// Validate name if provided
+	if r.Name != nil {
+		if strings.TrimSpace(*r.Name) == "" {
+			return NewValidationError("name cannot be empty")
+		}
+		if len(*r.Name) > 255 {
+			return NewValidationError("name must be less than 255 characters")
+		}
+	}
+
+	// Validate description if provided
+	if r.Description != nil && len(*r.Description) > 1000 {
+		return NewValidationError("description must be less than 1000 characters")
+	}
+
+	// Validate status if provided
+	if r.Status != nil {
+		validStatuses := []string{"draft", "published", "archived"}
+		if !contains(validStatuses, *r.Status) {
+			return NewValidationError("status must be one of: draft, published, archived")
+		}
+	}
+
+	// SEO validation
+	if r.MetaTitle != nil && len(*r.MetaTitle) > 60 {
+		return NewValidationError("meta title must be less than 60 characters")
+	}
+
+	if r.MetaDescription != nil && len(*r.MetaDescription) > 160 {
+		return NewValidationError("meta description must be less than 160 characters")
+	}
+
+	return nil
+}
+
+// Entity conversion methods
+
+// ToEntity converts Create{{.ComponentName | title}}Request to {{.ComponentName | title}} entity
+func (r *Create{{.ComponentName | title}}Request) ToEntity() *{{.ComponentName | title}} {
+	now := time.Now()
+
+	entity := &{{.ComponentName | title}}{
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		Name:            strings.TrimSpace(r.Name),
+		Description:     strings.TrimSpace(r.Description),
+		Status:          r.Status,
+		MetaTitle:       strings.TrimSpace(r.MetaTitle),
+		MetaDescription: strings.TrimSpace(r.MetaDescription),
+		DisplayOrder:    r.DisplayOrder,
+		IsPublished:     r.IsPublished,
+		IsFeatured:      r.IsFeatured,
+	}
+
+	// Generate slug from name
+	entity.Slug = generateSlug(entity.Name)
+
+	// Set published timestamp if published
+	if r.IsPublished && r.Status == "published" {
+		entity.PublishedAt = &now
+	}
+
+	return entity
+}
+
+// ApplyUpdates applies Update{{.ComponentName | title}}Request to existing {{.ComponentName | title}} entity
+func (r *Update{{.ComponentName | title}}Request) ApplyUpdates(entity *{{.ComponentName | title}}) {
+	entity.UpdatedAt = time.Now()
+
+	// Apply updates only for non-nil fields
+	if r.Name != nil {
+		entity.Name = strings.TrimSpace(*r.Name)
+		entity.Slug = generateSlug(entity.Name) // Regenerate slug
+	}
+
+	if r.Description != nil {
+		entity.Description = strings.TrimSpace(*r.Description)
+	}
+
+	if r.Status != nil {
+		oldStatus := entity.Status
+		entity.Status = *r.Status
+
+		// Handle published timestamp
+		if *r.Status == "published" && oldStatus != "published" {
+			now := time.Now()
+			entity.PublishedAt = &now
+		} else if *r.Status != "published" {
+			entity.PublishedAt = nil
+		}
+	}
+
+	if r.MetaTitle != nil {
+		entity.MetaTitle = strings.TrimSpace(*r.MetaTitle)
+	}
+
+	if r.MetaDescription != nil {
+		entity.MetaDescription = strings.TrimSpace(*r.MetaDescription)
+	}
+
+	if r.DisplayOrder != nil {
+		entity.DisplayOrder = *r.DisplayOrder
+	}
+
+	if r.IsPublished != nil {
+		entity.IsPublished = *r.IsPublished
+
+		// Update published timestamp based on new published status
+		if *r.IsPublished && entity.Status == "published" && entity.PublishedAt == nil {
+			now := time.Now()
+			entity.PublishedAt = &now
+		} else if !*r.IsPublished {
+			entity.PublishedAt = nil
+		}
+	}
+
+	if r.IsFeatured != nil {
+		entity.IsFeatured = *r.IsFeatured
+	}
+}
+
+// Filter methods
+
+// DefaultFilter returns a {{.ComponentName | title}}Filter with default values
+func DefaultFilter() *{{.ComponentName | title}}Filter {
+	return &{{.ComponentName | title}}Filter{
+		Page:      1,
+		Limit:     20,
+		SortBy:    "created_at",
+		SortOrder: "desc",
+	}
+}
+
+// Normalize normalizes the filter values
+func (f *{{.ComponentName | title}}Filter) Normalize() {
+	if f.Page <= 0 {
+		f.Page = 1
+	}
+	if f.Limit <= 0 || f.Limit > 100 {
+		f.Limit = 20
+	}
+	if f.SortBy == "" {
+		f.SortBy = "created_at"
+	}
+	if f.SortOrder == "" {
+		f.SortOrder = "desc"
+	}
+}
+
+// Offset calculates the offset for pagination
+func (f *{{.ComponentName | title}}Filter) Offset() int {
+	return (f.Page - 1) * f.Limit
+}
+
+// Entity methods
+
+// IsActive returns true if the {{.ComponentName | snake_case}} is published and active
+func (e *{{.ComponentName | title}}) IsActive() bool {
+	return e.IsPublished && e.Status == "published"
+}
+
+// GetDisplayName returns the name for display purposes
+func (e *{{.ComponentName | title}}) GetDisplayName() string {
+	if e.Name != "" {
+		return e.Name
+	}
+	return "Untitled"
+}
+
+// GetExcerpt returns a short excerpt of the description
+func (e *{{.ComponentName | title}}) GetExcerpt(maxLength int) string {
+	if len(e.Description) <= maxLength {
+		return e.Description
+	}
+
+	// Find the last space before maxLength
+	if maxLength > 3 {
+		excerpt := e.Description[:maxLength-3]
+		if lastSpace := strings.LastIndex(excerpt, " "); lastSpace > 0 {
+			excerpt = excerpt[:lastSpace]
+		}
+		return excerpt + "..."
+	}
+
+	return e.Description[:maxLength]
+}
+
+// GetMetaTitle returns the meta title or falls back to name
+func (e *{{.ComponentName | title}}) GetMetaTitle() string {
+	if e.MetaTitle != "" {
+		return e.MetaTitle
+	}
+	return e.Name
+}
+
+// GetMetaDescription returns the meta description or falls back to excerpt
+func (e *{{.ComponentName | title}}) GetMetaDescription() string {
+	if e.MetaDescription != "" {
+		return e.MetaDescription
+	}
+	return e.GetExcerpt(160)
+}
+
+// GetStatusBadgeClass returns CSS class for status badge
+func (e *{{.ComponentName | title}}) GetStatusBadgeClass() string {
+	switch e.Status {
+	case "published":
+		return "badge-success"
+	case "draft":
+		return "badge-warning"
+	case "archived":
+		return "badge-secondary"
+	default:
+		return "badge-light"
+	}
+}
+
+// Helper functions
+
+// generateSlug creates a URL-friendly slug from a string
+func generateSlug(s string) string {
+	// Simple slug generation - you might want to use a proper slug library
+	slug := strings.ToLower(s)
+	slug = strings.ReplaceAll(slug, " ", "-")
+	slug = strings.ReplaceAll(slug, "_", "-")
+
+	// Remove any characters that aren't alphanumeric or hyphens
+	var result []rune
+	for _, r := range slug {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			result = append(result, r)
+		}
+	}
+
+	return strings.Trim(string(result), "-")
+}
+
+// contains checks if a slice contains a string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
+// NewValidationError creates a new validation error
+func NewValidationError(message string) error {
+	// This should match your error handling package
+	// For now, return a simple error
+	return fmt.Errorf("validation error: %s", message)
+}

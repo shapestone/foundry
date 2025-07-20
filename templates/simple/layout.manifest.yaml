@@ -1,0 +1,28 @@
+name: "simple"
+version: "1.0.0"
+author: "Foundry Team"
+description: "Simple single-package Go project - perfect for learning and quick prototypes"
+min_foundry_version: "0.5.0"
+
+structure:
+  directories: []
+  files:
+    - template: "project/main.go.tmpl"
+      target: "main.go"
+    - template: "project/go.mod.tmpl"
+      target: "go.mod"
+    - template: "project/README.md.tmpl"
+      target: "README.md"
+
+dependencies: []
+
+features:
+  - "single-package-structure"
+  - "minimal-setup"
+  - "perfect-for-learning"
+  - "quick-prototyping"
+  - "zero-configuration"
+
+variables: []
+
+components: {}

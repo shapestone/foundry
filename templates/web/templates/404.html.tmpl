@@ -1,0 +1,354 @@
+{{`{{define "content"}}`}}
+<!-- 404 Error Section -->
+<section class="error-page">
+    <div class="container">
+        <div class="error-content">
+            <div class="error-illustration">
+                <svg width="300" height="200" viewBox="0 0 300 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <!-- 404 Illustration -->
+                    <circle cx="150" cy="100" r="80" fill="#f8f9fa" stroke="#e9ecef" stroke-width="2"/>
+                    <path d="M120 80 L180 120 M180 80 L120 120" stroke="#6c757d" stroke-width="3" stroke-linecap="round"/>
+
+                    <!-- Floating Elements -->
+                    <circle cx="80" cy="60" r="8" fill="#667eea" opacity="0.6"/>
+                    <circle cx="220" cy="140" r="6" fill="#764ba2" opacity="0.6"/>
+                    <rect x="60" y="120" width="12" height="12" fill="#f093fb" opacity="0.6" rx="2"/>
+                    <rect x="240" y="70" width="10" height="10" fill="#f5576c" opacity="0.6" rx="2"/>
+
+                    <!-- Search Icon -->
+                    <circle cx="190" cy="60" r="12" fill="none" stroke="#6c757d" stroke-width="2"/>
+                    <path d="m200 70 8 8" stroke="#6c757d" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+            </div>
+
+            <div class="error-text">
+                <h1 class="error-code">404</h1>
+                <h2 class="error-title">Page Not Found</h2>
+                <p class="error-description">
+                    Sorry, the page you are looking for doesn't exist or has been moved.
+                </p>
+
+                <div class="error-suggestions">
+                    <h3>Here are some helpful links:</h3>
+                    <ul>
+                        <li><a href="/">Go to Homepage</a></li>
+                        <li><a href="/about">Learn About Us</a></li>
+                        <li><a href="/contact">Contact Support</a></li>
+                    </ul>
+                </div>
+
+                <div class="error-actions">
+                    <a href="/" class="btn btn-primary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                            <polyline points="9,22 9,12 15,12 15,22"/>
+                        </svg>
+                        Back to Home
+                    </a>
+                    <button onclick="history.back()" class="btn btn-secondary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="15,18 9,12 15,6"/>
+                        </svg>
+                        Go Back
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search Section -->
+        <div class="error-search">
+            <h3>Search for what you need:</h3>
+            <form class="search-form" action="/search" method="GET">
+                <div class="search-input-group">
+                    <input
+                        type="text"
+                        name="q"
+                        placeholder="Search our site..."
+                        class="search-input"
+                        value="{{`{{.SearchQuery}}`}}"
+                    >
+                    <button type="submit" class="search-button">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <path d="m21 21-4.35-4.35"/>
+                        </svg>
+                        Search
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Popular Pages -->
+        <div class="popular-pages">
+            <h3>Popular Pages</h3>
+            <div class="pages-grid">
+                <a href="/" class="page-card">
+                    <div class="page-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                            <polyline points="9,22 9,12 15,12 15,22"/>
+                        </svg>
+                    </div>
+                    <div class="page-info">
+                        <h4>Home</h4>
+                        <p>Main landing page</p>
+                    </div>
+                </a>
+
+                <a href="/about" class="page-card">
+                    <div class="page-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M12 16v-4"/>
+                            <path d="M12 8h.01"/>
+                        </svg>
+                    </div>
+                    <div class="page-info">
+                        <h4>About</h4>
+                        <p>Learn more about us</p>
+                    </div>
+                </a>
+
+                <a href="/contact" class="page-card">
+                    <div class="page-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                            <polyline points="22,6 12,13 2,6"/>
+                        </svg>
+                    </div>
+                    <div class="page-info">
+                        <h4>Contact</h4>
+                        <p>Get in touch with us</p>
+                    </div>
+                </a>
+
+                <a href="/api/v1/health" class="page-card">
+                    <div class="page-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/>
+                        </svg>
+                    </div>
+                    <div class="page-info">
+                        <h4>API Health</h4>
+                        <p>Check system status</p>
+                    </div>
+                </a>
+            </div>
+        </div>
+
+        <!-- Help Section -->
+        <div class="error-help">
+            <div class="help-box">
+                <h4>Still need help?</h4>
+                <p>If you believe this is an error, please <a href="/contact">contact our support team</a> and include the following information:</p>
+                <div class="error-details">
+                    <code>
+                        URL: {{`{{.URL}}`}}<br>
+                        Time: {{`{{.Timestamp}}`}}<br>
+                        User Agent: {{`{{.UserAgent}}`}}
+                    </code>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<style>
+.error-page {
+    padding: 4rem 0;
+    min-height: 60vh;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+.error-content {
+    display: flex;
+    align-items: center;
+    gap: 3rem;
+    margin-bottom: 3rem;
+}
+
+.error-illustration {
+    flex: 1;
+    text-align: center;
+}
+
+.error-text {
+    flex: 1;
+}
+
+.error-code {
+    font-size: 6rem;
+    font-weight: 900;
+    color: #667eea;
+    margin: 0;
+    line-height: 1;
+}
+
+.error-title {
+    font-size: 2.5rem;
+    color: #2d3748;
+    margin: 1rem 0;
+}
+
+.error-description {
+    font-size: 1.1rem;
+    color: #4a5568;
+    margin-bottom: 2rem;
+}
+
+.error-suggestions {
+    margin-bottom: 2rem;
+}
+
+.error-suggestions h3 {
+    color: #2d3748;
+    margin-bottom: 1rem;
+}
+
+.error-suggestions ul {
+    list-style: none;
+    padding: 0;
+}
+
+.error-suggestions li {
+    margin-bottom: 0.5rem;
+}
+
+.error-suggestions a {
+    color: #667eea;
+    text-decoration: none;
+}
+
+.error-suggestions a:hover {
+    text-decoration: underline;
+}
+
+.error-actions {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.error-search {
+    margin-bottom: 3rem;
+    text-align: center;
+}
+
+.search-form {
+    max-width: 400px;
+    margin: 1rem auto 0;
+}
+
+.search-input-group {
+    display: flex;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.search-input {
+    flex: 1;
+    padding: 0.75rem 1rem;
+    border: none;
+    font-size: 1rem;
+}
+
+.search-button {
+    padding: 0.75rem 1.5rem;
+    background: #667eea;
+    color: white;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.popular-pages {
+    margin-bottom: 3rem;
+}
+
+.pages-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.page-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: white;
+    border-radius: 0.5rem;
+    text-decoration: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.page-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.page-icon {
+    color: #667eea;
+}
+
+.page-info h4 {
+    margin: 0 0 0.25rem 0;
+    color: #2d3748;
+}
+
+.page-info p {
+    margin: 0;
+    color: #4a5568;
+    font-size: 0.9rem;
+}
+
+.error-help {
+    text-align: center;
+}
+
+.help-box {
+    background: white;
+    padding: 2rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.error-details {
+    background: #f7fafc;
+    padding: 1rem;
+    border-radius: 0.25rem;
+    margin-top: 1rem;
+    font-family: monospace;
+    font-size: 0.9rem;
+    text-align: left;
+}
+
+@media (max-width: 768px) {
+    .error-content {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .error-code {
+        font-size: 4rem;
+    }
+
+    .error-actions {
+        justify-content: center;
+    }
+
+    .pages-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{{`{{end}}`}}
+
+{{`{{template "layout.html" .}}`}}

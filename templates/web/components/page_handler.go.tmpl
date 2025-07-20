@@ -1,0 +1,362 @@
+package handlers
+
+import (
+	"net/http"
+
+	"github.com/gorilla/csrf"
+	"github.com/gorilla/sessions"
+	"{{.ModuleName}}/internal/services"
+)
+
+// {{.ComponentName | title}}PageHandler handles web page requests for {{.ComponentName | snake_case}}
+type {{.ComponentName | title}}PageHandler struct {
+	service services.{{.ComponentName | title}}Service
+	store   *sessions.CookieStore
+}
+
+// New{{.ComponentName | title}}PageHandler creates a new {{.ComponentName | snake_case}} page handler
+func New{{.ComponentName | title}}PageHandler(service services.{{.ComponentName | title}}Service, store *sessions.CookieStore) *{{.ComponentName | title}}PageHandler {
+	return &{{.ComponentName | title}}PageHandler{
+		service: service,
+		store:   store,
+	}
+}
+
+// Index displays the {{.ComponentName | snake_case}} listing page
+func (h *{{.ComponentName | title}}PageHandler) Index(w http.ResponseWriter, r *http.Request) {
+	// Get session for flash messages
+	session, _ := h.store.Get(r, "session")
+
+	// Get {{.ComponentName | snake_case | plural}} from service
+	{{.ComponentName | snake_case | plural}}, err := h.service.GetAll(r.Context())
+	if err != nil {
+		h.renderErrorPage(w, r, "Failed to load {{.ComponentName | snake_case | plural}}", http.StatusInternalServerError)
+		return
+	}
+
+	// Prepare template data
+	data := map[string]interface{}{
+		"Title":       "{{.ComponentName | title | plural}} - {{.ProjectName}}",
+		"PageTitle":   "{{.ComponentName | title | plural}}",
+		"{{.ComponentName | title | plural}}": {{.ComponentName | snake_case | plural}},
+		csrf.TemplateTag: csrf.TemplateField(r),
+	}
+
+	// Add flash messages if any
+	h.addFlashMessages(session, data)
+	session.Save(r, w)
+
+	h.renderTemplate(w, "{{.ComponentName | snake_case}}/index.html", data)
+}
+
+// Show displays a single {{.ComponentName | snake_case}} page
+func (h *{{.ComponentName | title}}PageHandler) Show(w http.ResponseWriter, r *http.Request) {
+	// Get ID from URL parameter
+	id, err := h.getIDFromURL(r)
+	if err != nil {
+		h.renderErrorPage(w, r, "Invalid {{.ComponentName | snake_case}} ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get session for flash messages
+	session, _ := h.store.Get(r, "session")
+
+	// Get {{.ComponentName | snake_case}} from service
+	{{.ComponentName | snake_case}}, err := h.service.GetByID(r.Context(), id)
+	if err != nil {
+		h.renderErrorPage(w, r, "{{.ComponentName | title}} not found", http.StatusNotFound)
+		return
+	}
+
+	// Prepare template data
+	data := map[string]interface{}{
+		"Title":     "{{.ComponentName | title}} Details - {{.ProjectName}}",
+		"PageTitle": "{{.ComponentName | title}} Details",
+		"{{.ComponentName | title}}": {{.ComponentName | snake_case}},
+		csrf.TemplateTag: csrf.TemplateField(r),
+	}
+
+	// Add flash messages if any
+	h.addFlashMessages(session, data)
+	session.Save(r, w)
+
+	h.renderTemplate(w, "{{.ComponentName | snake_case}}/show.html", data)
+}
+
+// New displays the create {{.ComponentName | snake_case}} form
+func (h *{{.ComponentName | title}}PageHandler) New(w http.ResponseWriter, r *http.Request) {
+	// Get session for flash messages
+	session, _ := h.store.Get(r, "session")
+
+	// Prepare template data
+	data := map[string]interface{}{
+		"Title":     "Create {{.ComponentName | title}} - {{.ProjectName}}",
+		"PageTitle": "Create {{.ComponentName | title}}",
+		csrf.TemplateTag: csrf.TemplateField(r),
+	}
+
+	// Add flash messages if any
+	h.addFlashMessages(session, data)
+	session.Save(r, w)
+
+	h.renderTemplate(w, "{{.ComponentName | snake_case}}/new.html", data)
+}
+
+// Create handles {{.ComponentName | snake_case}} creation form submission
+func (h *{{.ComponentName | title}}PageHandler) Create(w http.ResponseWriter, r *http.Request) {
+	// Get session for flash messages
+	session, _ := h.store.Get(r, "session")
+
+	// Parse form data
+	if err := r.ParseForm(); err != nil {
+		session.AddFlash("Invalid form data", "error")
+		session.Save(r, w)
+		http.Redirect(w, r, "/{{.ComponentName | snake_case | plural}}/new", http.StatusSeeOther)
+		return
+	}
+
+	// Extract form values
+	// TODO: Add your specific form fields here
+	// Example:
+	// name := r.FormValue("name")
+	// description := r.FormValue("description")
+
+	// Validate form data
+	errors := h.validateCreateForm(r)
+	if len(errors) > 0 {
+		// Re-render form with errors
+		data := map[string]interface{}{
+			"Title":     "Create {{.ComponentName | title}} - {{.ProjectName}}",
+			"PageTitle": "Create {{.ComponentName | title}}",
+			"Errors":    errors,
+			"FormData":  r.Form,
+			csrf.TemplateTag: csrf.TemplateField(r),
+		}
+		h.renderTemplate(w, "{{.ComponentName | snake_case}}/new.html", data)
+		return
+	}
+
+	// Create {{.ComponentName | snake_case}} via service
+	{{.ComponentName | snake_case}}, err := h.service.Create(r.Context(), /* your create parameters */)
+	if err != nil {
+		session.AddFlash("Failed to create {{.ComponentName | snake_case}}", "error")
+		session.Save(r, w)
+		http.Redirect(w, r, "/{{.ComponentName | snake_case | plural}}/new", http.StatusSeeOther)
+		return
+	}
+
+	// Success - redirect to show page
+	session.AddFlash("{{.ComponentName | title}} created successfully", "success")
+	session.Save(r, w)
+	http.Redirect(w, r, "/{{.ComponentName | snake_case | plural}}/"+{{.ComponentName | snake_case}}.ID, http.StatusSeeOther)
+}
+
+// Edit displays the edit {{.ComponentName | snake_case}} form
+func (h *{{.ComponentName | title}}PageHandler) Edit(w http.ResponseWriter, r *http.Request) {
+	// Get ID from URL parameter
+	id, err := h.getIDFromURL(r)
+	if err != nil {
+		h.renderErrorPage(w, r, "Invalid {{.ComponentName | snake_case}} ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get session for flash messages
+	session, _ := h.store.Get(r, "session")
+
+	// Get {{.ComponentName | snake_case}} from service
+	{{.ComponentName | snake_case}}, err := h.service.GetByID(r.Context(), id)
+	if err != nil {
+		h.renderErrorPage(w, r, "{{.ComponentName | title}} not found", http.StatusNotFound)
+		return
+	}
+
+	// Prepare template data
+	data := map[string]interface{}{
+		"Title":     "Edit {{.ComponentName | title}} - {{.ProjectName}}",
+		"PageTitle": "Edit {{.ComponentName | title}}",
+		"{{.ComponentName | title}}": {{.ComponentName | snake_case}},
+		csrf.TemplateTag: csrf.TemplateField(r),
+	}
+
+	// Add flash messages if any
+	h.addFlashMessages(session, data)
+	session.Save(r, w)
+
+	h.renderTemplate(w, "{{.ComponentName | snake_case}}/edit.html", data)
+}
+
+// Update handles {{.ComponentName | snake_case}} update form submission
+func (h *{{.ComponentName | title}}PageHandler) Update(w http.ResponseWriter, r *http.Request) {
+	// Get ID from URL parameter
+	id, err := h.getIDFromURL(r)
+	if err != nil {
+		h.renderErrorPage(w, r, "Invalid {{.ComponentName | snake_case}} ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get session for flash messages
+	session, _ := h.store.Get(r, "session")
+
+	// Parse form data
+	if err := r.ParseForm(); err != nil {
+		session.AddFlash("Invalid form data", "error")
+		session.Save(r, w)
+		http.Redirect(w, r, "/{{.ComponentName | snake_case | plural}}/"+id+"/edit", http.StatusSeeOther)
+		return
+	}
+
+	// Validate form data
+	errors := h.validateUpdateForm(r)
+	if len(errors) > 0 {
+		// Get {{.ComponentName | snake_case}} for re-rendering form
+		{{.ComponentName | snake_case}}, err := h.service.GetByID(r.Context(), id)
+		if err != nil {
+			h.renderErrorPage(w, r, "{{.ComponentName | title}} not found", http.StatusNotFound)
+			return
+		}
+
+		// Re-render form with errors
+		data := map[string]interface{}{
+			"Title":     "Edit {{.ComponentName | title}} - {{.ProjectName}}",
+			"PageTitle": "Edit {{.ComponentName | title}}",
+			"{{.ComponentName | title}}": {{.ComponentName | snake_case}},
+			"Errors":    errors,
+			"FormData":  r.Form,
+			csrf.TemplateTag: csrf.TemplateField(r),
+		}
+		h.renderTemplate(w, "{{.ComponentName | snake_case}}/edit.html", data)
+		return
+	}
+
+	// Update {{.ComponentName | snake_case}} via service
+	err = h.service.Update(r.Context(), id, /* your update parameters */)
+	if err != nil {
+		session.AddFlash("Failed to update {{.ComponentName | snake_case}}", "error")
+		session.Save(r, w)
+		http.Redirect(w, r, "/{{.ComponentName | snake_case | plural}}/"+id+"/edit", http.StatusSeeOther)
+		return
+	}
+
+	// Success - redirect to show page
+	session.AddFlash("{{.ComponentName | title}} updated successfully", "success")
+	session.Save(r, w)
+	http.Redirect(w, r, "/{{.ComponentName | snake_case | plural}}/"+id, http.StatusSeeOther)
+}
+
+// Delete handles {{.ComponentName | snake_case}} deletion
+func (h *{{.ComponentName | title}}PageHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	// Get ID from URL parameter
+	id, err := h.getIDFromURL(r)
+	if err != nil {
+		h.renderErrorPage(w, r, "Invalid {{.ComponentName | snake_case}} ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get session for flash messages
+	session, _ := h.store.Get(r, "session")
+
+	// Delete {{.ComponentName | snake_case}} via service
+	err = h.service.Delete(r.Context(), id)
+	if err != nil {
+		session.AddFlash("Failed to delete {{.ComponentName | snake_case}}", "error")
+		session.Save(r, w)
+		http.Redirect(w, r, "/{{.ComponentName | snake_case | plural}}/"+id, http.StatusSeeOther)
+		return
+	}
+
+	// Success - redirect to index
+	session.AddFlash("{{.ComponentName | title}} deleted successfully", "success")
+	session.Save(r, w)
+	http.Redirect(w, r, "/{{.ComponentName | snake_case | plural}}", http.StatusSeeOther)
+}
+
+// Helper methods
+
+// getIDFromURL extracts the ID parameter from the URL
+func (h *{{.ComponentName | title}}PageHandler) getIDFromURL(r *http.Request) (string, error) {
+	// Implementation depends on your router
+	// For gorilla/mux:
+	// vars := mux.Vars(r)
+	// return vars["id"], nil
+
+	// For now, return a placeholder
+	return "1", nil
+}
+
+// validateCreateForm validates the create form data
+func (h *{{.ComponentName | title}}PageHandler) validateCreateForm(r *http.Request) map[string]string {
+	errors := make(map[string]string)
+
+	// TODO: Add your validation logic here
+	// Example:
+	// name := strings.TrimSpace(r.FormValue("name"))
+	// if name == "" {
+	//     errors["name"] = "Name is required"
+	// }
+
+	return errors
+}
+
+// validateUpdateForm validates the update form data
+func (h *{{.ComponentName | title}}PageHandler) validateUpdateForm(r *http.Request) map[string]string {
+	errors := make(map[string]string)
+
+	// TODO: Add your validation logic here
+	// Example:
+	// name := strings.TrimSpace(r.FormValue("name"))
+	// if name == "" {
+	//     errors["name"] = "Name is required"
+	// }
+
+	return errors
+}
+
+// addFlashMessages adds flash messages to template data
+func (h *{{.ComponentName | title}}PageHandler) addFlashMessages(session *sessions.Session, data map[string]interface{}) {
+	if flashes := session.Flashes("success"); len(flashes) > 0 {
+		data["FlashSuccess"] = flashes[0]
+	}
+	if flashes := session.Flashes("error"); len(flashes) > 0 {
+		data["FlashError"] = flashes[0]
+	}
+	if flashes := session.Flashes("info"); len(flashes) > 0 {
+		data["FlashInfo"] = flashes[0]
+	}
+}
+
+// renderTemplate renders the specified template with data
+func (h *{{.ComponentName | title}}PageHandler) renderTemplate(w http.ResponseWriter, tmpl string, data interface{}) {
+	// TODO: Implement template rendering
+	// This would typically use html/template or your chosen template engine
+	// For now, just write a placeholder response
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("<h1>{{.ComponentName | title}} Page</h1><p>Template: " + tmpl + "</p>"))
+}
+
+// renderErrorPage renders an error page
+func (h *{{.ComponentName | title}}PageHandler) renderErrorPage(w http.ResponseWriter, r *http.Request, message string, statusCode int) {
+	data := map[string]interface{}{
+		"Title":       "Error - {{.ProjectName}}",
+		"PageTitle":   "Error",
+		"ErrorMessage": message,
+		"StatusCode":   statusCode,
+	}
+
+	w.WriteHeader(statusCode)
+	h.renderTemplate(w, "error.html", data)
+}
+
+// RegisterRoutes registers all {{.ComponentName | snake_case}} page routes
+func (h *{{.ComponentName | title}}PageHandler) RegisterRoutes(router interface{}) {
+	// TODO: Register routes with your router
+	// For gorilla/mux example:
+	// r := router.(*mux.Router)
+	// r.HandleFunc("/{{.ComponentName | snake_case | plural}}", h.Index).Methods("GET")
+	// r.HandleFunc("/{{.ComponentName | snake_case | plural}}/new", h.New).Methods("GET")
+	// r.HandleFunc("/{{.ComponentName | snake_case | plural}}", h.Create).Methods("POST")
+	// r.HandleFunc("/{{.ComponentName | snake_case | plural}}/{id}", h.Show).Methods("GET")
+	// r.HandleFunc("/{{.ComponentName | snake_case | plural}}/{id}/edit", h.Edit).Methods("GET")
+	// r.HandleFunc("/{{.ComponentName | snake_case | plural}}/{id}", h.Update).Methods("POST", "PUT")
+	// r.HandleFunc("/{{.ComponentName | snake_case | plural}}/{id}/delete", h.Delete).Methods("POST", "DELETE")
+}

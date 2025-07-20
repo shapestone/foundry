@@ -1,0 +1,219 @@
+package main
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+
+	"github.com/gorilla/mux"
+)
+
+// Response represents a standard API response
+type Response struct {
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
+	Error   string      `json:"error,omitempty"`
+}
+
+// HealthHandler handles health check requests
+func HealthHandler(w http.ResponseWriter, r *http.Request) {
+	response := Response{
+		Message: "{{.ProjectName}} is healthy",
+		Data: map[string]string{
+			"status":  "ok",
+			"version": "1.0.0",
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// HomeHandler handles the home page
+func HomeHandler(w http.ResponseWriter, r *http.Request) {
+	response := Response{
+		Message: "Welcome to {{.ProjectName}}!",
+		Data: map[string]string{
+			"description": "{{.Description}}",
+			"endpoints": "/api/v1/users, /health",
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// ListUsersHandler handles GET /api/v1/users
+func ListUsersHandler(w http.ResponseWriter, r *http.Request) {
+	users, err := GetAllUsers()
+	if err != nil {
+		http.Error(w, "Failed to fetch users", http.StatusInternalServerError)
+		return
+	}
+
+	response := Response{
+		Message: "Users retrieved successfully",
+		Data:    users,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// CreateUserHandler handles POST /api/v1/users
+func CreateUserHandler(w http.ResponseWriter, r *http.Request) {
+	var user User
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+		response := Response{
+			Error: "Invalid JSON format",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Validate user data
+	if user.Name == "" {
+		response := Response{
+			Error: "Name is required",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Create user
+	createdUser, err := CreateUser(user)
+	if err != nil {
+		response := Response{
+			Error: "Failed to create user",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	response := Response{
+		Message: "User created successfully",
+		Data:    createdUser,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response)
+}
+
+// GetUserHandler handles GET /api/v1/users/{id}
+func GetUserHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		response := Response{
+			Error: "Invalid user ID",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	user, err := GetUserByID(id)
+	if err != nil {
+		response := Response{
+			Error: "User not found",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	response := Response{
+		Message: "User retrieved successfully",
+		Data:    user,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// UpdateUserHandler handles PUT /api/v1/users/{id}
+func UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		response := Response{
+			Error: "Invalid user ID",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	var user User
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+		response := Response{
+			Error: "Invalid JSON format",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	user.ID = id
+	updatedUser, err := UpdateUser(user)
+	if err != nil {
+		response := Response{
+			Error: "Failed to update user",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	response := Response{
+		Message: "User updated successfully",
+		Data:    updatedUser,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// DeleteUserHandler handles DELETE /api/v1/users/{id}
+func DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		response := Response{
+			Error: "Invalid user ID",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	if err := DeleteUser(id); err != nil {
+		response := Response{
+			Error: "Failed to delete user",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	response := Response{
+		Message: "User deleted successfully",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}

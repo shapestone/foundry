@@ -1,0 +1,106 @@
+# Foundry project configuration
+project:
+  name: "{{.project_name}}"
+  version: "1.0.0"
+  description: "A Go application built with Hexagonal Architecture"
+  layout: "hexagonal"
+
+# Build configuration
+build:
+  main: "cmd/main.go"
+  output: "bin/{{.project_name}}"
+  flags:
+    - "-ldflags=-s -w"
+
+# Development settings
+dev:
+  port: {{.http_port}}
+  hot_reload: true
+  watch:
+    - "**/*.go"
+    - "**/*.yaml"
+    - "**/*.yml"
+    - "**/*.json"
+  ignore:
+    - "bin/"
+    - "tmp/"
+    - "vendor/"
+    - "*.test"
+
+# Test configuration
+test:
+  coverage:
+    enabled: true
+    threshold: 80
+    output: "coverage.html"
+  paths:
+    - "./internal/core/..."
+    - "./internal/adapters/..."
+  flags:
+    - "-race"
+    - "-timeout=30s"
+
+# Docker configuration
+docker:
+  image: "{{.project_name}}"
+  tag: "latest"
+  port: {{.http_port}}
+  healthcheck:
+    endpoint: "/health"
+    interval: "30s"
+    timeout: "10s"
+    retries: 3
+
+# Component generation settings
+components:
+  entity:
+    path: "internal/core/domain"
+    template: "entity.go.tmpl"
+  port:
+    path: "internal/core/ports"
+    template: "port.go.tmpl"
+  service:
+    path: "internal/core/services"
+    template: "service.go.tmpl"
+  http_adapter:
+    path: "internal/adapters/primary"
+    template: "http_adapter.go.tmpl"
+  repository_adapter:
+    path: "internal/adapters/secondary"
+    template: "repository_adapter.go.tmpl"
+
+# Architecture validation
+architecture:
+  hexagonal:
+    enforce_dependency_rules: true
+    core_packages:
+      - "internal/core/domain"
+      - "internal/core/services"
+    port_packages:
+      - "internal/core/ports"
+    adapter_packages:
+      - "internal/adapters/primary"
+      - "internal/adapters/secondary"
+    forbidden_imports:
+      core:
+        - "github.com/*"
+        - "gopkg.in/*"
+      ports:
+        - "internal/adapters/*"
+
+# Scripts
+scripts:
+  validate: "make validate-architecture"
+  lint: "make lint"
+  format: "make format"
+  test-core: "make test-core"
+  test-adapters: "make test-adapters"
+
+# Dependencies
+dependencies:
+  required:
+    - "github.com/gorilla/mux"
+    - "github.com/joho/godotenv"
+  development:
+    - "github.com/cosmtrek/air"
+    - "github.com/golangci/golangci-lint"

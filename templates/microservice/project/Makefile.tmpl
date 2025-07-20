@@ -1,0 +1,320 @@
+# Makefile for {{.ProjectName}} Microservice
+
+.PHONY: deps build test test-unit test-integration test-coverage proto-gen docker-build docker-push
+.PHONY: run migrate-up migrate-down migrate-create migrate-reset clean lint fmt docs mocks
+.PHONY: k8s-deploy k8s-delete helm-install helm-uninstall local-infra local-infra-down
+
+# Variables
+SERVICE_NAME := {{.CustomVariables.service_name | default "user"}}
+DOCKER_REGISTRY := {{.CustomVariables.docker_registry | default "localhost:5000"}}
+IMAGE_TAG := $(shell git rev-parse --short HEAD)
+NAMESPACE := {{.CustomVariables.namespace | default "default"}}
+
+# Go related variables
+GOCMD := go
+GOBUILD := $(GOCMD) build
+GOTEST := $(GOCMD) test
+GOMOD := $(GOCMD) mod
+GOGEN := $(GOCMD) generate
+
+# Build info
+VERSION := $(shell git describe --tags --always --dirty)
+BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
+LDFLAGS := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)
+
+# Directories
+PROTO_DIR := api/proto
+SHARED_PROTO_DIR := shared/proto
+SERVICE_DIR := services/$(SERVICE_NAME)
+MIGRATION_DIR := tools/migrations
+
+## Help target
+help: ## Show this help message
+	@echo "Available targets:"
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+## Dependencies
+deps: ## Download and verify dependencies
+	$(GOMOD) download
+	$(GOMOD) verify
+	$(GOMOD) tidy
+
+## Build targets
+build: deps proto-gen ## Build the service binary
+	$(GOBUILD) -ldflags "$(LDFLAGS)" -o bin/$(SERVICE_NAME) ./$(SERVICE_DIR)
+
+build-all: deps proto-gen ## Build all service binaries
+	@for service in services/*/; do \
+		if [ -f "$$service/main.go" ]; then \
+			service_name=$$(basename $$service); \
+			echo "Building $$service_name..."; \
+			$(GOBUILD) -ldflags "$(LDFLAGS)" -o bin/$$service_name ./$$service; \
+		fi \
+	done
+
+## Protocol Buffers
+proto-gen: ## Generate Go code from protobuf files
+	@echo "Generating protobuf code..."
+	@if command -v buf >/dev/null 2>&1; then \
+		buf generate; \
+	else \
+		echo "Using protoc (buf not found)..."; \
+		protoc --go_out=. --go_opt=paths=source_relative \
+			--go-grpc_out=. --go-grpc_opt=paths=source_relative \
+			--grpc-gateway_out=. --grpc-gateway_opt=paths=source_relative \
+			$(PROTO_DIR)/*.proto $(SHARED_PROTO_DIR)/*.proto; \
+	fi
+
+proto-lint: ## Lint protobuf files
+	@if command -v buf >/dev/null 2>&1; then \
+		buf lint; \
+	else \
+		echo "buf not installed, skipping proto lint"; \
+	fi
+
+## Testing
+test: deps ## Run unit tests
+	$(GOTEST) -v ./...
+
+test-unit: deps ## Run unit tests only
+	$(GOTEST) -v -short ./...
+
+test-integration: deps ## Run integration tests
+	$(GOTEST) -v -run Integration ./...
+
+test-coverage: deps ## Run tests with coverage
+	$(GOTEST) -v -coverprofile=coverage.out ./...
+	$(GOCMD) tool cover -html=coverage.out -o coverage.html
+
+test-race: deps ## Run tests with race detection
+	$(GOTEST) -v -race ./...
+
+test-all: test test-integration ## Run all tests
+
+## Code generation
+mocks: ## Generate mocks for testing
+	@echo "Generating mocks..."
+	@if command -v mockgen >/dev/null 2>&1; then \
+		$(GOGEN) ./...; \
+	else \
+		echo "mockgen not installed, install with: go install github.com/golang/mock/mockgen@latest"; \
+	fi
+
+docs: proto-gen ## Generate API documentation
+	@echo "Generating API documentation..."
+	@if command -v protoc-gen-openapiv2 >/dev/null 2>&1; then \
+		protoc --openapiv2_out=docs/api --openapiv2_opt=logtostderr=true $(PROTO_DIR)/*.proto; \
+	else \
+		echo "protoc-gen-openapiv2 not installed"; \
+	fi
+
+## Docker targets
+docker-build: ## Build Docker images
+	@echo "Building Docker image for $(SERVICE_NAME)..."
+	docker build -t $(DOCKER_REGISTRY)/$(SERVICE_NAME):$(IMAGE_TAG) \
+		-t $(DOCKER_REGISTRY)/$(SERVICE_NAME):latest \
+		-f $(SERVICE_DIR)/Dockerfile .
+
+docker-build-all: ## Build Docker images for all services
+	@for service in services/*/; do \
+		if [ -f "$$service/Dockerfile" ]; then \
+			service_name=$$(basename $$service); \
+			echo "Building Docker image for $$service_name..."; \
+			docker build -t $(DOCKER_REGISTRY)/$$service_name:$(IMAGE_TAG) \
+				-t $(DOCKER_REGISTRY)/$$service_name:latest \
+				-f $$service/Dockerfile .; \
+		fi \
+	done
+
+docker-push: docker-build ## Push Docker images to registry
+	docker push $(DOCKER_REGISTRY)/$(SERVICE_NAME):$(IMAGE_TAG)
+	docker push $(DOCKER_REGISTRY)/$(SERVICE_NAME):latest
+
+docker-push-all: docker-build-all ## Push all Docker images to registry
+	@for service in services/*/; do \
+		if [ -f "$$service/Dockerfile" ]; then \
+			service_name=$$(basename $$service); \
+			docker push $(DOCKER_REGISTRY)/$$service_name:$(IMAGE_TAG); \
+			docker push $(DOCKER_REGISTRY)/$$service_name:latest; \
+		fi \
+	done
+
+## Local development
+run: build ## Run the service locally
+	@echo "Starting $(SERVICE_NAME) service..."
+	./bin/$(SERVICE_NAME)
+
+run-dev: ## Run service in development mode with live reload
+	@if command -v air >/dev/null 2>&1; then \
+		air -c .air.toml; \
+	else \
+		echo "air not installed, running normally..."; \
+		$(MAKE) run; \
+	fi
+
+local-infra: ## Start local infrastructure (databases, message brokers, etc.)
+	@echo "Starting local infrastructure..."
+	docker-compose up -d postgres redis {{.CustomVariables.message_broker | default "nats"}} jaeger prometheus grafana
+
+local-infra-down: ## Stop local infrastructure
+	@echo "Stopping local infrastructure..."
+	docker-compose down
+
+local-stack: local-infra ## Start full local stack
+	@echo "Waiting for infrastructure to be ready..."
+	@sleep 10
+	$(MAKE) migrate-up
+	$(MAKE) run
+
+## Database migrations
+migrate-up: ## Apply database migrations
+	@echo "Applying database migrations..."
+	@if command -v migrate >/dev/null 2>&1; then \
+		migrate -path $(MIGRATION_DIR) -database "$(DATABASE_URL)" up; \
+	else \
+		echo "migrate not installed, install with: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest"; \
+	fi
+
+migrate-down: ## Rollback database migrations
+	@echo "Rolling back database migrations..."
+	migrate -path $(MIGRATION_DIR) -database "$(DATABASE_URL)" down
+
+migrate-create: ## Create new migration (usage: make migrate-create NAME=add_users_table)
+	@if [ -z "$(NAME)" ]; then \
+		echo "Usage: make migrate-create NAME=migration_name"; \
+		exit 1; \
+	fi
+	migrate create -ext sql -dir $(MIGRATION_DIR) $(NAME)
+
+migrate-reset: migrate-down migrate-up ## Reset database (down then up)
+
+## Kubernetes deployment
+k8s-deploy: docker-push ## Deploy to Kubernetes
+	@echo "Deploying to Kubernetes..."
+	kubectl apply -f deployments/kubernetes/ -n $(NAMESPACE)
+
+k8s-delete: ## Delete from Kubernetes
+	@echo "Deleting from Kubernetes..."
+	kubectl delete -f deployments/kubernetes/ -n $(NAMESPACE)
+
+k8s-logs: ## Show service logs in Kubernetes
+	kubectl logs -l app=$(SERVICE_NAME) -n $(NAMESPACE) -f
+
+k8s-status: ## Show deployment status
+	kubectl get pods,services,deployments -l app=$(SERVICE_NAME) -n $(NAMESPACE)
+
+## Helm deployment
+helm-install: docker-push ## Install with Helm
+	@echo "Installing with Helm..."
+	helm upgrade --install $(SERVICE_NAME) ./deployments/helm \
+		--set image.repository=$(DOCKER_REGISTRY)/$(SERVICE_NAME) \
+		--set image.tag=$(IMAGE_TAG) \
+		--namespace $(NAMESPACE) \
+		--create-namespace
+
+helm-uninstall: ## Uninstall Helm release
+	helm uninstall $(SERVICE_NAME) -n $(NAMESPACE)
+
+helm-template: ## Show Helm template output
+	helm template $(SERVICE_NAME) ./deployments/helm \
+		--set image.repository=$(DOCKER_REGISTRY)/$(SERVICE_NAME) \
+		--set image.tag=$(IMAGE_TAG)
+
+## Code quality
+fmt: ## Format Go code
+	$(GOCMD) fmt ./...
+	@if command -v goimports >/dev/null 2>&1; then \
+		goimports -w .; \
+	fi
+
+lint: ## Run linters
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run; \
+	else \
+		echo "golangci-lint not installed, install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+	fi
+
+sec: ## Run security scan
+	@if command -v gosec >/dev/null 2>&1; then \
+		gosec ./...; \
+	else \
+		echo "gosec not installed, install with: go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest"; \
+	fi
+
+## Benchmarks
+bench: ## Run benchmarks
+	$(GOTEST) -bench=. -benchmem ./...
+
+bench-profile: ## Run benchmarks with CPU profiling
+	$(GOTEST) -bench=. -benchmem -cpuprofile=cpu.prof ./...
+
+## Clean up
+clean: ## Clean build artifacts and test outputs
+	@echo "Cleaning build artifacts..."
+	@rm -rf bin/
+	@rm -f coverage.out coverage.html
+	@rm -f cpu.prof mem.prof
+	@rm -rf docs/api/*.json
+	@$(GOCMD) clean -testcache
+	@docker system prune -f
+
+clean-all: clean ## Clean everything including Docker images
+	@docker rmi $(DOCKER_REGISTRY)/$(SERVICE_NAME):$(IMAGE_TAG) 2>/dev/null || true
+	@docker rmi $(DOCKER_REGISTRY)/$(SERVICE_NAME):latest 2>/dev/null || true
+
+## Monitoring and debugging
+logs: ## Show service logs
+	@if [ -f "./bin/$(SERVICE_NAME)" ]; then \
+		echo "Service not running. Use 'make run' first."; \
+	else \
+		echo "Binary not found. Use 'make build' first."; \
+	fi
+
+health: ## Check service health
+	@echo "Checking service health..."
+	@curl -f http://localhost:{{.CustomVariables.http_port | default "8080"}}/health || echo "Service not responding"
+
+metrics: ## Show service metrics
+	@echo "Service metrics:"
+	@curl -s http://localhost:{{.CustomVariables.metrics_port | default "2112"}}/metrics || echo "Metrics not available"
+
+## Environment setup
+setup-dev: ## Setup development environment
+	@echo "Setting up development environment..."
+	@if ! command -v buf >/dev/null 2>&1; then \
+		echo "Installing buf..."; \
+		go install github.com/bufbuild/buf/cmd/buf@latest; \
+	fi
+	@if ! command -v mockgen >/dev/null 2>&1; then \
+		echo "Installing mockgen..."; \
+		go install github.com/golang/mock/mockgen@latest; \
+	fi
+	@if ! command -v air >/dev/null 2>&1; then \
+		echo "Installing air for live reload..."; \
+		go install github.com/cosmtrek/air@latest; \
+	fi
+	@if ! command -v migrate >/dev/null 2>&1; then \
+		echo "Installing migrate..."; \
+		go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest; \
+	fi
+	@echo "Development environment setup complete!"
+
+## Release
+release: clean test lint docker-build ## Prepare release
+	@echo "Release $(VERSION) ready"
+	@echo "Next steps:"
+	@echo "  1. make docker-push"
+	@echo "  2. make helm-install"
+
+## Show configuration
+config: ## Show current configuration
+	@echo "=== {{.ProjectName}} Configuration ==="
+	@echo "Service Name: $(SERVICE_NAME)"
+	@echo "Version: $(VERSION)"
+	@echo "Build Time: $(BUILD_TIME)"
+	@echo "Docker Registry: $(DOCKER_REGISTRY)"
+	@echo "Image Tag: $(IMAGE_TAG)"
+	@echo "Namespace: $(NAMESPACE)"
+	@echo "================================"
+
+.DEFAULT_GOAL := help

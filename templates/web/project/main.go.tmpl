@@ -1,0 +1,271 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"html/template"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+	"time"
+
+	"github.com/gorilla/csrf"
+	"github.com/gorilla/mux"
+	"github.com/gorilla/sessions"
+	"github.com/joho/godotenv"
+)
+
+var (
+	// Template cache
+	templates *template.Template
+
+	// Session store
+	store *sessions.CookieStore
+)
+
+func main() {
+	// Load environment variables
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using system environment variables")
+	}
+
+	// Initialize templates
+	if err := initTemplates(); err != nil {
+		log.Fatalf("Failed to initialize templates: %v", err)
+	}
+
+	// Initialize session store
+	initSessions()
+
+	// Initialize router
+	router := setupRoutes()
+
+	// Server configuration
+	port := getEnv("PORT", "{{.CustomVariables.http_port | default "8080"}}")
+	addr := fmt.Sprintf(":%s", port)
+
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Start server in a goroutine
+	go func() {
+		log.Printf("{{.ProjectName}} web server starting on port %s", port)
+		log.Printf("Visit: http://localhost:%s", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed to start: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down server...")
+
+	// Graceful shutdown with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server exited")
+}
+
+// initTemplates loads and parses HTML templates
+func initTemplates() error {
+	templatePattern := filepath.Join("templates", "*.html")
+	tmpl, err := template.ParseGlob(templatePattern)
+	if err != nil {
+		return fmt.Errorf("failed to parse templates: %w", err)
+	}
+	templates = tmpl
+	log.Printf("Loaded templates from: %s", templatePattern)
+	return nil
+}
+
+// initSessions initializes the session store
+func initSessions() {
+	sessionSecret := getEnv("SESSION_SECRET", "{{.CustomVariables.session_secret | default "change-this-secret-key"}}")
+	store = sessions.NewCookieStore([]byte(sessionSecret))
+	store.Options = &sessions.Options{
+		Path:     "/",
+		MaxAge:   86400 * 7, // 7 days
+		HttpOnly: true,
+		Secure:   false, // Set to true in production with HTTPS
+		SameSite: http.SameSiteLaxMode,
+	}
+}
+
+// setupRoutes configures all routes and middleware
+func setupRoutes() *mux.Router {
+	router := mux.NewRouter()
+
+	// CSRF protection
+	csrfKey := getEnv("CSRF_KEY", "{{.CustomVariables.csrf_key | default "32-byte-long-auth-key"}}")
+	csrfMiddleware := csrf.Protect([]byte(csrfKey), csrf.Secure(false)) // Set Secure(true) in production
+
+	// Global middleware
+	router.Use(loggingMiddleware)
+	router.Use(recoveryMiddleware)
+
+	// Static file server
+	staticHandler := http.StripPrefix("/static/", http.FileServer(http.Dir("static/")))
+	router.PathPrefix("/static/").Handler(staticHandler)
+
+	// Protected routes with CSRF
+	protected := router.NewRoute().Subrouter()
+	protected.Use(csrfMiddleware)
+
+	// Page routes
+	protected.HandleFunc("/", homeHandler).Methods("GET")
+	protected.HandleFunc("/about", aboutHandler).Methods("GET")
+	protected.HandleFunc("/contact", contactHandler).Methods("GET", "POST")
+
+	// API routes (JSON responses, no CSRF needed for simple APIs)
+	api := router.PathPrefix("/api/v1").Subrouter()
+	api.HandleFunc("/health", healthHandler).Methods("GET")
+	api.HandleFunc("/example", exampleAPIHandler).Methods("GET")
+
+	// 404 handler
+	router.NotFoundHandler = http.HandlerFunc(notFoundHandler)
+
+	return router
+}
+
+// Page handlers
+
+func homeHandler(w http.ResponseWriter, r *http.Request) {
+	data := map[string]interface{}{
+		"Title":     "Welcome to {{.ProjectName}}",
+		"PageTitle": "Home",
+		csrf.TemplateTag: csrf.TemplateField(r),
+	}
+	renderTemplate(w, "index.html", data)
+}
+
+func aboutHandler(w http.ResponseWriter, r *http.Request) {
+	data := map[string]interface{}{
+		"Title":     "About - {{.ProjectName}}",
+		"PageTitle": "About",
+		csrf.TemplateTag: csrf.TemplateField(r),
+	}
+	renderTemplate(w, "about.html", data)
+}
+
+func contactHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		// Handle form submission
+		name := r.FormValue("name")
+		email := r.FormValue("email")
+		message := r.FormValue("message")
+
+		// Basic validation
+		if name == "" || email == "" || message == "" {
+			http.Error(w, "All fields are required", http.StatusBadRequest)
+			return
+		}
+
+		// TODO: Process the contact form (save to database, send email, etc.)
+		log.Printf("Contact form submitted: Name=%s, Email=%s, Message=%s", name, email, message)
+
+		// Redirect to thank you page or show success message
+		http.Redirect(w, r, "/?success=1", http.StatusSeeOther)
+		return
+	}
+
+	// GET request - show form
+	data := map[string]interface{}{
+		"Title":     "Contact - {{.ProjectName}}",
+		"PageTitle": "Contact",
+		csrf.TemplateTag: csrf.TemplateField(r),
+	}
+	renderTemplate(w, "contact.html", data)
+}
+
+func notFoundHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotFound)
+	data := map[string]interface{}{
+		"Title":     "Page Not Found - {{.ProjectName}}",
+		"PageTitle": "404 - Page Not Found",
+	}
+	renderTemplate(w, "404.html", data)
+}
+
+// API handlers
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, `{"status":"ok","service":"{{.ProjectName}}","type":"web"}`)
+}
+
+func exampleAPIHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, `{"message":"Hello from {{.ProjectName}} API!","timestamp":"` + time.Now().Format(time.RFC3339) + `"}`)
+}
+
+// Middleware
+
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		// Wrap the response writer to capture status code
+		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+		next.ServeHTTP(wrapped, r)
+
+		duration := time.Since(start)
+		log.Printf("%s %s %d %v %s", r.Method, r.URL.Path, wrapped.statusCode, duration, r.RemoteAddr)
+	})
+}
+
+func recoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("Panic recovered: %v", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Helper types and functions
+
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func renderTemplate(w http.ResponseWriter, tmpl string, data interface{}) {
+	err := templates.ExecuteTemplate(w, tmpl, data)
+	if err != nil {
+		log.Printf("Template error: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}

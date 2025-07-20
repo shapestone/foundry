@@ -1,0 +1,340 @@
+# Service definition for {{.CustomVariables.service_name | title}} Service
+# This exposes the service within the Kubernetes cluster
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    component: microservice
+    version: v1
+    project: {{.ProjectName | lower}}
+  annotations:
+    # Service discovery annotations
+    service.kubernetes.io/load-balancer-class: "{{.CustomVariables.load_balancer_class | default "nginx"}}"
+
+    # Prometheus monitoring
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "{{.CustomVariables.metrics_port | default "2112"}}"
+    prometheus.io/path: "/metrics"
+    prometheus.io/scheme: "http"
+
+    # Service mesh annotations
+    {{- if eq (.CustomVariables.service_mesh | default "istio") "istio"}}
+    # Istio annotations
+    sidecar.istio.io/inject: "true"
+    traffic.sidecar.istio.io/includeInboundPorts: "{{.CustomVariables.grpc_port | default "9090"}},{{.CustomVariables.http_port | default "8080"}}"
+    traffic.sidecar.istio.io/excludeOutboundPorts: "{{.CustomVariables.metrics_port | default "2112"}}"
+    {{- else if eq (.CustomVariables.service_mesh | default "istio") "linkerd"}}
+    # Linkerd annotations
+    linkerd.io/inject: enabled
+    config.linkerd.io/skip-inbound-ports: "{{.CustomVariables.metrics_port | default "2112"}}"
+    {{- end}}
+
+    # Load balancer configuration
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internal"
+
+    # Description
+    description: "{{.CustomVariables.service_name | title}} microservice providing core business functionality"
+
+spec:
+  type: ClusterIP
+  sessionAffinity: None
+  ports:
+    # gRPC port
+    - name: grpc
+      port: {{.CustomVariables.grpc_port | default "9090"}}
+      targetPort: grpc
+      protocol: TCP
+      appProtocol: grpc
+
+    # HTTP gateway port
+    - name: http
+      port: {{.CustomVariables.http_port | default "8080"}}
+      targetPort: http
+      protocol: TCP
+      appProtocol: http
+
+    # Metrics port
+    - name: metrics
+      port: {{.CustomVariables.metrics_port | default "2112"}}
+      targetPort: metrics
+      protocol: TCP
+      appProtocol: http
+
+  selector:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+
+---
+# Headless service for service discovery
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service-headless
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    component: microservice
+    version: v1
+    project: {{.ProjectName | lower}}
+    service-type: headless
+  annotations:
+    description: "Headless service for {{.CustomVariables.service_name | title}} service discovery"
+    service.kubernetes.io/topology-aware-hints: "auto"
+spec:
+  type: ClusterIP
+  clusterIP: None  # Makes it headless
+  publishNotReadyAddresses: false
+  ports:
+    - name: grpc
+      port: {{.CustomVariables.grpc_port | default "9090"}}
+      targetPort: grpc
+      protocol: TCP
+    - name: http
+      port: {{.CustomVariables.http_port | default "8080"}}
+      targetPort: http
+      protocol: TCP
+  selector:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+
+---
+# External LoadBalancer service (for external access)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service-external
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    component: microservice
+    version: v1
+    project: {{.ProjectName | lower}}
+    service-type: external
+  annotations:
+    description: "External LoadBalancer for {{.CustomVariables.service_name | title}} service"
+
+    # AWS Load Balancer Controller annotations
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    service.beta.kubernetes.io/aws-load-balancer-attributes: "load_balancing.cross_zone.enabled=true"
+
+    # Health check configuration
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "HTTP"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-path: "/health"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "{{.CustomVariables.http_port | default "8080"}}"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval: "30"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-timeout: "10"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-healthy-threshold: "2"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-unhealthy-threshold: "3"
+
+    # SSL/TLS configuration
+    service.beta.kubernetes.io/aws-load-balancer-ssl-cert: "arn:aws:acm:region:account:certificate/cert-id"
+    service.beta.kubernetes.io/aws-load-balancer-ssl-ports: "https"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "http"
+
+spec:
+  type: LoadBalancer
+  loadBalancerClass: "service.k8s.aws/nlb"
+  ports:
+    # HTTPS port (terminated at load balancer)
+    - name: https
+      port: 443
+      targetPort: http
+      protocol: TCP
+
+    # HTTP port (for health checks and internal access)
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+
+    # gRPC port (with TLS passthrough)
+    - name: grpc-tls
+      port: 9443
+      targetPort: grpc
+      protocol: TCP
+
+  selector:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+
+  # Only create LoadBalancer in production
+  {{- if ne (.CustomVariables.environment | default "development") "production"}}
+  # Commented out for non-production environments
+  # type: ClusterIP
+  {{- end}}
+
+---
+# Service for monitoring (Prometheus scraping)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service-metrics
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    component: monitoring
+    version: v1
+    project: {{.ProjectName | lower}}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "{{.CustomVariables.metrics_port | default "2112"}}"
+    prometheus.io/path: "/metrics"
+    prometheus.io/scheme: "http"
+    description: "Metrics endpoint for {{.CustomVariables.service_name | title}} service monitoring"
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: {{.CustomVariables.metrics_port | default "2112"}}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+
+---
+# ServiceMonitor for Prometheus Operator
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service-monitor
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    component: monitoring
+    version: v1
+    project: {{.ProjectName | lower}}
+    prometheus: "main"
+spec:
+  selector:
+    matchLabels:
+      app: {{.CustomVariables.service_name | default "user"}}-service
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: false
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+  namespaceSelector:
+    matchNames:
+      - {{.CustomVariables.namespace | default "default"}}
+
+---
+# EndpointSlice for service topology
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service-endpoints
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    kubernetes.io/service-name: {{.CustomVariables.service_name | default "user"}}-service
+    project: {{.ProjectName | lower}}
+  annotations:
+    description: "Custom endpoint slice for advanced routing"
+addressType: IPv4
+ports:
+  - name: grpc
+    port: {{.CustomVariables.grpc_port | default "9090"}}
+    protocol: TCP
+    appProtocol: grpc
+  - name: http
+    port: {{.CustomVariables.http_port | default "8080"}}
+    protocol: TCP
+    appProtocol: http
+
+---
+# Service for internal communication (within namespace)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-internal
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    component: internal
+    version: v1
+    project: {{.ProjectName | lower}}
+  annotations:
+    description: "Internal service for inter-service communication"
+    networking.kubernetes.io/internal-service: "true"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: grpc
+      port: {{.CustomVariables.grpc_port | default "9090"}}
+      targetPort: grpc
+      protocol: TCP
+  selector:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+  publishNotReadyAddresses: false
+
+---
+# Service for health checks
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-health
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    component: health
+    version: v1
+    project: {{.ProjectName | lower}}
+  annotations:
+    description: "Health check service for {{.CustomVariables.service_name | title}} service"
+spec:
+  type: ClusterIP
+  ports:
+    - name: health
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  selector:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+
+---
+# ExternalName service for external dependencies
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-external-db
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    component: external
+    type: database
+spec:
+  type: ExternalName
+  externalName: postgres.database.svc.cluster.local
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+
+---
+# Service Account for the service
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service-account
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    component: rbac
+  annotations:
+    description: "Service account for {{.CustomVariables.service_name | title}} service"
+    # AWS IAM role association (if using IAM Roles for Service Accounts)
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT_ID:role/{{.ProjectName}}-{{.CustomVariables.service_name | default "user"}}-role"
+automountServiceAccountToken: true

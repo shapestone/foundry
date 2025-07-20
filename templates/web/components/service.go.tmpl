@@ -1,0 +1,600 @@
+package services
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"{{.ModuleName}}/internal/models"
+	"{{.ModuleName}}/internal/repository"
+	"{{.ModuleName}}/pkg/errors"
+)
+
+// {{.ComponentName | title}}Service defines the interface for {{.ComponentName | snake_case}} business logic
+type {{.ComponentName | title}}Service interface {
+	// CRUD operations
+	GetAll(ctx context.Context) ([]*models.{{.ComponentName | title}}, error)
+	GetByID(ctx context.Context, id int64) (*models.{{.ComponentName | title}}, error)
+	GetBySlug(ctx context.Context, slug string) (*models.{{.ComponentName | title}}, error)
+	Create(ctx context.Context, req *models.Create{{.ComponentName | title}}Request) (*models.{{.ComponentName | title}}, error)
+	Update(ctx context.Context, id int64, req *models.Update{{.ComponentName | title}}Request) (*models.{{.ComponentName | title}}, error)
+	Delete(ctx context.Context, id int64) error
+
+	// Filtering and search
+	List(ctx context.Context, filter *models.{{.ComponentName | title}}Filter) ([]*models.{{.ComponentName | title}}, int64, error)
+	Search(ctx context.Context, filter *models.{{.ComponentName | title}}Filter) ([]*models.{{.ComponentName | title}}, int64, error)
+
+	// Web-specific operations
+	GetPublished(ctx context.Context, filter *models.{{.ComponentName | title}}Filter) ([]*models.{{.ComponentName | title}}, int64, error)
+	GetFeatured(ctx context.Context, limit int) ([]*models.{{.ComponentName | title}}, error)
+	GetByStatus(ctx context.Context, status string, filter *models.{{.ComponentName | title}}Filter) ([]*models.{{.ComponentName | title}}, int64, error)
+
+	// Bulk operations
+	BulkDelete(ctx context.Context, ids []int64) (int64, error)
+	BulkUpdateStatus(ctx context.Context, ids []int64, status string) (int64, error)
+	BulkPublish(ctx context.Context, ids []int64) (int64, error)
+	BulkUnpublish(ctx context.Context, ids []int64) (int64, error)
+
+	// Statistics and analytics
+	GetStats(ctx context.Context) (*models.{{.ComponentName | title}}Stats, error)
+	GetRecentActivity(ctx context.Context, limit int) ([]*models.{{.ComponentName | title}}, error)
+
+	// Advanced operations
+	Patch(ctx context.Context, id int64, updates map[string]interface{}) (*models.{{.ComponentName | title}}, error)
+	Duplicate(ctx context.Context, id int64) (*models.{{.ComponentName | title}}, error)
+	Archive(ctx context.Context, id int64) error
+	Restore(ctx context.Context, id int64) error
+}
+
+// {{.ComponentName | snake_case}}Service implements {{.ComponentName | title}}Service interface
+type {{.ComponentName | snake_case}}Service struct {
+	repo repository.{{.ComponentName | title}}Repository
+}
+
+// New{{.ComponentName | title}}Service creates a new {{.ComponentName | snake_case}} service
+func New{{.ComponentName | title}}Service(repo repository.{{.ComponentName | title}}Repository) {{.ComponentName | title}}Service {
+	return &{{.ComponentName | snake_case}}Service{
+		repo: repo,
+	}
+}
+
+// CRUD operations
+
+// GetAll retrieves all {{.ComponentName | snake_case | plural}}
+func (s *{{.ComponentName | snake_case}}Service) GetAll(ctx context.Context) ([]*models.{{.ComponentName | title}}, error) {
+	filter := models.DefaultFilter()
+	filter.Limit = 1000 // Large limit for GetAll
+
+	{{.ComponentName | snake_case | plural}}, _, err := s.repo.FindByFilter(ctx, filter)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get all {{.ComponentName | snake_case | plural}}")
+	}
+
+	return {{.ComponentName | snake_case | plural}}, nil
+}
+
+// GetByID retrieves a {{.ComponentName | snake_case}} by ID
+func (s *{{.ComponentName | snake_case}}Service) GetByID(ctx context.Context, id int64) (*models.{{.ComponentName | title}}, error) {
+	if id <= 0 {
+		return nil, errors.NewValidationError("invalid {{.ComponentName | snake_case}} ID")
+	}
+
+	{{.ComponentName | snake_case}}, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.IsNotFoundError(err) {
+			return nil, errors.NewNotFoundError("{{.ComponentName | snake_case}} not found")
+		}
+		return nil, errors.Wrap(err, "failed to get {{.ComponentName | snake_case}}")
+	}
+
+	return {{.ComponentName | snake_case}}, nil
+}
+
+// GetBySlug retrieves a {{.ComponentName | snake_case}} by slug
+func (s *{{.ComponentName | snake_case}}Service) GetBySlug(ctx context.Context, slug string) (*models.{{.ComponentName | title}}, error) {
+	if slug == "" {
+		return nil, errors.NewValidationError("slug is required")
+	}
+
+	{{.ComponentName | snake_case}}, err := s.repo.FindBySlug(ctx, slug)
+	if err != nil {
+		if errors.IsNotFoundError(err) {
+			return nil, errors.NewNotFoundError("{{.ComponentName | snake_case}} not found")
+		}
+		return nil, errors.Wrap(err, "failed to get {{.ComponentName | snake_case}} by slug")
+	}
+
+	return {{.ComponentName | snake_case}}, nil
+}
+
+// Create creates a new {{.ComponentName | snake_case}}
+func (s *{{.ComponentName | snake_case}}Service) Create(ctx context.Context, req *models.Create{{.ComponentName | title}}Request) (*models.{{.ComponentName | title}}, error) {
+	if req == nil {
+		return nil, errors.NewValidationError("create request is required")
+	}
+
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Business logic validation
+	if err := s.validateCreateRequest(ctx, req); err != nil {
+		return nil, err
+	}
+
+	{{.ComponentName | snake_case}} := req.ToEntity()
+
+	// Check for slug uniqueness
+	if err := s.ensureUniqueSlug(ctx, {{.ComponentName | snake_case}}.Slug, 0); err != nil {
+		return nil, err
+	}
+
+	created{{.ComponentName | title}}, err := s.repo.Create(ctx, {{.ComponentName | snake_case}})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create {{.ComponentName | snake_case}}")
+	}
+
+	return created{{.ComponentName | title}}, nil
+}
+
+// Update updates an existing {{.ComponentName | snake_case}}
+func (s *{{.ComponentName | snake_case}}Service) Update(ctx context.Context, id int64, req *models.Update{{.ComponentName | title}}Request) (*models.{{.ComponentName | title}}, error) {
+	if id <= 0 {
+		return nil, errors.NewValidationError("invalid {{.ComponentName | snake_case}} ID")
+	}
+
+	if req == nil {
+		return nil, errors.NewValidationError("update request is required")
+	}
+
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Get existing {{.ComponentName | snake_case}}
+	existing{{.ComponentName | title}}, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.IsNotFoundError(err) {
+			return nil, errors.NewNotFoundError("{{.ComponentName | snake_case}} not found")
+		}
+		return nil, errors.Wrap(err, "failed to get {{.ComponentName | snake_case}}")
+	}
+
+	// Business logic validation
+	if err := s.validateUpdateRequest(ctx, id, req); err != nil {
+		return nil, err
+	}
+
+	// Apply updates
+	req.ApplyUpdates(existing{{.ComponentName | title}})
+
+	// Check for slug uniqueness if name changed
+	if req.Name != nil {
+		if err := s.ensureUniqueSlug(ctx, existing{{.ComponentName | title}}.Slug, id); err != nil {
+			return nil, err
+		}
+	}
+
+	updated{{.ComponentName | title}}, err := s.repo.Update(ctx, existing{{.ComponentName | title}})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to update {{.ComponentName | snake_case}}")
+	}
+
+	return updated{{.ComponentName | title}}, nil
+}
+
+// Delete deletes a {{.ComponentName | snake_case}}
+func (s *{{.ComponentName | snake_case}}Service) Delete(ctx context.Context, id int64) error {
+	if id <= 0 {
+		return errors.NewValidationError("invalid {{.ComponentName | snake_case}} ID")
+	}
+
+	// Check if {{.ComponentName | snake_case}} exists
+	_, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.IsNotFoundError(err) {
+			return errors.NewNotFoundError("{{.ComponentName | snake_case}} not found")
+		}
+		return errors.Wrap(err, "failed to get {{.ComponentName | snake_case}}")
+	}
+
+	// Business logic validation for deletion
+	if err := s.validateDeleteRequest(ctx, id); err != nil {
+		return err
+	}
+
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return errors.Wrap(err, "failed to delete {{.ComponentName | snake_case}}")
+	}
+
+	return nil
+}
+
+// Filtering and search
+
+// List retrieves {{.ComponentName | snake_case | plural}} with filtering and pagination
+func (s *{{.ComponentName | snake_case}}Service) List(ctx context.Context, filter *models.{{.ComponentName | title}}Filter) ([]*models.{{.ComponentName | title}}, int64, error) {
+	if filter == nil {
+		filter = models.DefaultFilter()
+	}
+	filter.Normalize()
+
+	{{.ComponentName | snake_case | plural}}, err := s.repo.FindByFilter(ctx, filter)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "failed to list {{.ComponentName | snake_case | plural}}")
+	}
+
+	total, err := s.repo.CountByFilter(ctx, filter)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "failed to count {{.ComponentName | snake_case | plural}}")
+	}
+
+	return {{.ComponentName | snake_case | plural}}, total, nil
+}
+
+// Search searches {{.ComponentName | snake_case | plural}} with advanced filtering
+func (s *{{.ComponentName | snake_case}}Service) Search(ctx context.Context, filter *models.{{.ComponentName | title}}Filter) ([]*models.{{.ComponentName | title}}, int64, error) {
+	if filter == nil {
+		filter = models.DefaultFilter()
+	}
+	filter.Normalize()
+
+	{{.ComponentName | snake_case | plural}}, err := s.repo.Search(ctx, filter)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "failed to search {{.ComponentName | snake_case | plural}}")
+	}
+
+	total, err := s.repo.CountByFilter(ctx, filter)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "failed to count search results")
+	}
+
+	return {{.ComponentName | snake_case | plural}}, total, nil
+}
+
+// Web-specific operations
+
+// GetPublished retrieves only published {{.ComponentName | snake_case | plural}}
+func (s *{{.ComponentName | snake_case}}Service) GetPublished(ctx context.Context, filter *models.{{.ComponentName | title}}Filter) ([]*models.{{.ComponentName | title}}, int64, error) {
+	if filter == nil {
+		filter = models.DefaultFilter()
+	}
+	filter.Normalize()
+	filter.Status = "published"
+
+	published := true
+	filter.Featured = &published
+
+	return s.List(ctx, filter)
+}
+
+// GetFeatured retrieves featured {{.ComponentName | snake_case | plural}}
+func (s *{{.ComponentName | snake_case}}Service) GetFeatured(ctx context.Context, limit int) ([]*models.{{.ComponentName | title}}, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	filter := &models.{{.ComponentName | title}}Filter{
+		Page:    1,
+		Limit:   limit,
+		Status:  "published",
+		SortBy:  "display_order",
+		SortOrder: "asc",
+	}
+
+	featured := true
+	filter.Featured = &featured
+
+	{{.ComponentName | snake_case | plural}}, _, err := s.repo.FindByFilter(ctx, filter)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get featured {{.ComponentName | snake_case | plural}}")
+	}
+
+	return {{.ComponentName | snake_case | plural}}, nil
+}
+
+// GetByStatus retrieves {{.ComponentName | snake_case | plural}} by status
+func (s *{{.ComponentName | snake_case}}Service) GetByStatus(ctx context.Context, status string, filter *models.{{.ComponentName | title}}Filter) ([]*models.{{.ComponentName | title}}, int64, error) {
+	if filter == nil {
+		filter = models.DefaultFilter()
+	}
+	filter.Normalize()
+	filter.Status = status
+
+	return s.List(ctx, filter)
+}
+
+// Bulk operations
+
+// BulkDelete deletes multiple {{.ComponentName | snake_case | plural}}
+func (s *{{.ComponentName | snake_case}}Service) BulkDelete(ctx context.Context, ids []int64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, errors.NewValidationError("no IDs provided")
+	}
+
+	var deletedCount int64
+	for _, id := range ids {
+		if err := s.Delete(ctx, id); err != nil {
+			// Log error but continue with other deletions
+			continue
+		}
+		deletedCount++
+	}
+
+	return deletedCount, nil
+}
+
+// BulkUpdateStatus updates status for multiple {{.ComponentName | snake_case | plural}}
+func (s *{{.ComponentName | snake_case}}Service) BulkUpdateStatus(ctx context.Context, ids []int64, status string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, errors.NewValidationError("no IDs provided")
+	}
+
+	validStatuses := []string{"draft", "published", "archived"}
+	isValid := false
+	for _, validStatus := range validStatuses {
+		if status == validStatus {
+			isValid = true
+			break
+		}
+	}
+	if !isValid {
+		return 0, errors.NewValidationError("invalid status")
+	}
+
+	var updatedCount int64
+	for _, id := range ids {
+		req := &models.Update{{.ComponentName | title}}Request{
+			Status: &status,
+		}
+		if _, err := s.Update(ctx, id, req); err != nil {
+			continue
+		}
+		updatedCount++
+	}
+
+	return updatedCount, nil
+}
+
+// BulkPublish publishes multiple {{.ComponentName | snake_case | plural}}
+func (s *{{.ComponentName | snake_case}}Service) BulkPublish(ctx context.Context, ids []int64) (int64, error) {
+	published := true
+	status := "published"
+
+	var updatedCount int64
+	for _, id := range ids {
+		req := &models.Update{{.ComponentName | title}}Request{
+			Status:      &status,
+			IsPublished: &published,
+		}
+		if _, err := s.Update(ctx, id, req); err != nil {
+			continue
+		}
+		updatedCount++
+	}
+
+	return updatedCount, nil
+}
+
+// BulkUnpublish unpublishes multiple {{.ComponentName | snake_case | plural}}
+func (s *{{.ComponentName | snake_case}}Service) BulkUnpublish(ctx context.Context, ids []int64) (int64, error) {
+	unpublished := false
+	status := "draft"
+
+	var updatedCount int64
+	for _, id := range ids {
+		req := &models.Update{{.ComponentName | title}}Request{
+			Status:      &status,
+			IsPublished: &unpublished,
+		}
+		if _, err := s.Update(ctx, id, req); err != nil {
+			continue
+		}
+		updatedCount++
+	}
+
+	return updatedCount, nil
+}
+
+// Statistics and analytics
+
+// GetStats retrieves statistics for {{.ComponentName | snake_case | plural}}
+func (s *{{.ComponentName | snake_case}}Service) GetStats(ctx context.Context) (*models.{{.ComponentName | title}}Stats, error) {
+	stats, err := s.repo.GetStats(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get statistics")
+	}
+
+	return stats, nil
+}
+
+// GetRecentActivity retrieves recently created/updated {{.ComponentName | snake_case | plural}}
+func (s *{{.ComponentName | snake_case}}Service) GetRecentActivity(ctx context.Context, limit int) ([]*models.{{.ComponentName | title}}, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	filter := &models.{{.ComponentName | title}}Filter{
+		Page:      1,
+		Limit:     limit,
+		SortBy:    "updated_at",
+		SortOrder: "desc",
+	}
+
+	{{.ComponentName | snake_case | plural}}, _, err := s.repo.FindByFilter(ctx, filter)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get recent activity")
+	}
+
+	return {{.ComponentName | snake_case | plural}}, nil
+}
+
+// Advanced operations
+
+// Patch applies partial updates to a {{.ComponentName | snake_case}}
+func (s *{{.ComponentName | snake_case}}Service) Patch(ctx context.Context, id int64, updates map[string]interface{}) (*models.{{.ComponentName | title}}, error) {
+	if id <= 0 {
+		return nil, errors.NewValidationError("invalid {{.ComponentName | snake_case}} ID")
+	}
+
+	// Get existing {{.ComponentName | snake_case}}
+	existing, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.IsNotFoundError(err) {
+			return nil, errors.NewNotFoundError("{{.ComponentName | snake_case}} not found")
+		}
+		return nil, errors.Wrap(err, "failed to get {{.ComponentName | snake_case}}")
+	}
+
+	// Apply updates
+	updated := time.Now()
+	existing.UpdatedAt = updated
+
+	// Apply specific field updates
+	for field, value := range updates {
+		switch field {
+		case "name":
+			if name, ok := value.(string); ok {
+				existing.Name = name
+				existing.Slug = s.generateSlug(name) // Regenerate slug
+			}
+		case "description":
+			if desc, ok := value.(string); ok {
+				existing.Description = desc
+			}
+		case "status":
+			if status, ok := value.(string); ok {
+				existing.Status = status
+			}
+		case "is_published":
+			if published, ok := value.(bool); ok {
+				existing.IsPublished = published
+			}
+		case "is_featured":
+			if featured, ok := value.(bool); ok {
+				existing.IsFeatured = featured
+			}
+		}
+	}
+
+	updated{{.ComponentName | title}}, err := s.repo.Update(ctx, existing)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to patch {{.ComponentName | snake_case}}")
+	}
+
+	return updated{{.ComponentName | title}}, nil
+}
+
+// Duplicate creates a copy of an existing {{.ComponentName | snake_case}}
+func (s *{{.ComponentName | snake_case}}Service) Duplicate(ctx context.Context, id int64) (*models.{{.ComponentName | title}}, error) {
+	if id <= 0 {
+		return nil, errors.NewValidationError("invalid {{.ComponentName | snake_case}} ID")
+	}
+
+	// Get existing {{.ComponentName | snake_case}}
+	existing, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.IsNotFoundError(err) {
+			return nil, errors.NewNotFoundError("{{.ComponentName | snake_case}} not found")
+		}
+		return nil, errors.Wrap(err, "failed to get {{.ComponentName | snake_case}}")
+	}
+
+	// Create duplicate
+	now := time.Now()
+	duplicate := &models.{{.ComponentName | title}}{
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		Name:        fmt.Sprintf("%s (Copy)", existing.Name),
+		Description: existing.Description,
+		Status:      "draft", // Always create duplicates as draft
+		IsPublished: false,
+		IsFeatured:  false,
+	}
+
+	// Generate unique slug
+	duplicate.Slug = s.generateSlug(duplicate.Name)
+	if err := s.ensureUniqueSlug(ctx, duplicate.Slug, 0); err != nil {
+		return nil, err
+	}
+
+	created, err := s.repo.Create(ctx, duplicate)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to duplicate {{.ComponentName | snake_case}}")
+	}
+
+	return created, nil
+}
+
+// Archive archives a {{.ComponentName | snake_case}}
+func (s *{{.ComponentName | snake_case}}Service) Archive(ctx context.Context, id int64) error {
+	status := "archived"
+	unpublished := false
+
+	req := &models.Update{{.ComponentName | title}}Request{
+		Status:      &status,
+		IsPublished: &unpublished,
+	}
+
+	_, err := s.Update(ctx, id, req)
+	return err
+}
+
+// Restore restores an archived {{.ComponentName | snake_case}}
+func (s *{{.ComponentName | snake_case}}Service) Restore(ctx context.Context, id int64) error {
+	status := "draft"
+
+	req := &models.Update{{.ComponentName | title}}Request{
+		Status: &status,
+	}
+
+	_, err := s.Update(ctx, id, req)
+	return err
+}
+
+// Private helper methods
+
+// validateCreateRequest performs business logic validation for create operations
+func (s *{{.ComponentName | snake_case}}Service) validateCreateRequest(ctx context.Context, req *models.Create{{.ComponentName | title}}Request) error {
+	// Add your business logic validation here
+	// Example: Check for duplicates, validate business rules, etc.
+	return nil
+}
+
+// validateUpdateRequest performs business logic validation for update operations
+func (s *{{.ComponentName | snake_case}}Service) validateUpdateRequest(ctx context.Context, id int64, req *models.Update{{.ComponentName | title}}Request) error {
+	// Add your business logic validation here
+	// Example: Check for duplicates (excluding current record), validate business rules, etc.
+	return nil
+}
+
+// validateDeleteRequest performs business logic validation for delete operations
+func (s *{{.ComponentName | snake_case}}Service) validateDeleteRequest(ctx context.Context, id int64) error {
+	// Add your business logic validation here
+	// Example: Check for dependencies, validate business rules, etc.
+	return nil
+}
+
+// ensureUniqueSlug ensures the slug is unique
+func (s *{{.ComponentName | snake_case}}Service) ensureUniqueSlug(ctx context.Context, slug string, excludeID int64) error {
+	existing, err := s.repo.FindBySlug(ctx, slug)
+	if err != nil {
+		if errors.IsNotFoundError(err) {
+			return nil // Slug is unique
+		}
+		return err
+	}
+
+	if existing.ID != excludeID {
+		return errors.NewConflictError("slug already exists")
+	}
+
+	return nil
+}
+
+// generateSlug creates a URL-friendly slug from a string
+func (s *{{.ComponentName | snake_case}}Service) generateSlug(name string) string {
+	// This is a simple implementation - you might want to use a proper slug library
+	// or implement more sophisticated slug generation
+	return strings.ToLower(strings.ReplaceAll(name, " ", "-"))
+}

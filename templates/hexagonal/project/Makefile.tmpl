@@ -1,0 +1,136 @@
+# Application
+APP_NAME={{.project_name}}
+VERSION?=latest
+
+# Build paths
+BUILD_DIR=bin
+MAIN_PATH=cmd/main.go
+
+# Docker
+DOCKER_IMAGE=$(APP_NAME):$(VERSION)
+
+# Go parameters
+GOCMD=go
+GOBUILD=$(GOCMD) build
+GOCLEAN=$(GOCMD) clean
+GOTEST=$(GOCMD) test
+GOGET=$(GOCMD) get
+GOMOD=$(GOCMD) mod
+
+.PHONY: help build clean test coverage run docker-build docker-run deps lint format
+
+help: ## Display this help screen
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+
+build: ## Build the application
+	@echo "Building $(APP_NAME)..."
+	@mkdir -p $(BUILD_DIR)
+	$(GOBUILD) -o $(BUILD_DIR)/$(APP_NAME) $(MAIN_PATH)
+
+clean: ## Clean build files
+	@echo "Cleaning..."
+	$(GOCLEAN)
+	@rm -rf $(BUILD_DIR)
+
+test: ## Run tests
+	@echo "Running tests..."
+	$(GOTEST) -v ./...
+
+test-coverage: ## Run tests with coverage
+	@echo "Running tests with coverage..."
+	$(GOTEST) -v -coverprofile=coverage.out ./...
+	$(GOCMD) tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
+
+test-core: ## Run core domain tests only
+	@echo "Running core domain tests..."
+	$(GOTEST) -v ./internal/core/...
+
+test-adapters: ## Run adapter tests only
+	@echo "Running adapter tests..."
+	$(GOTEST) -v ./internal/adapters/...
+
+run: ## Run the application
+	@echo "Running $(APP_NAME)..."
+	$(GOCMD) run $(MAIN_PATH)
+
+dev: ## Run with live reload (requires air: go install github.com/cosmtrek/air@latest)
+	@echo "Starting development server with live reload..."
+	air
+
+docker-build: ## Build Docker image
+	@echo "Building Docker image..."
+	docker build -t $(DOCKER_IMAGE) .
+
+docker-run: ## Run Docker container
+	@echo "Running Docker container..."
+	docker run -p {{.http_port}}:{{.http_port}} --env-file .env $(DOCKER_IMAGE)
+
+docker-compose-up: ## Run with docker-compose
+	@echo "Starting services with docker-compose..."
+	docker-compose up --build
+
+docker-compose-down: ## Stop docker-compose services
+	@echo "Stopping docker-compose services..."
+	docker-compose down
+
+deps: ## Download dependencies
+	@echo "Downloading dependencies..."
+	$(GOMOD) download
+	$(GOMOD) tidy
+
+lint: ## Run linter (requires golangci-lint)
+	@echo "Running linter..."
+	golangci-lint run
+
+format: ## Format code
+	@echo "Formatting code..."
+	$(GOCMD) fmt ./...
+
+vet: ## Run go vet
+	@echo "Running go vet..."
+	$(GOCMD) vet ./...
+
+check: format vet lint test ## Run all checks (format, vet, lint, test)
+
+install-tools: ## Install development tools
+	@echo "Installing development tools..."
+	$(GOCMD) install github.com/cosmtrek/air@latest
+	$(GOCMD) install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+# Architecture validation
+validate-architecture: ## Validate hexagonal architecture principles
+	@echo "Validating architecture..."
+	@echo "Checking core domain has no external dependencies..."
+	@if grep -r "github.com\|gopkg.in" internal/core/domain/ internal/core/services/ 2>/dev/null | grep -v "_test.go"; then \
+		echo "❌ Core domain should not import external packages"; \
+		exit 1; \
+	else \
+		echo "✅ Core domain is clean"; \
+	fi
+	@echo "Checking ports are interfaces only..."
+	@if find internal/core/ports/ -name "*.go" -exec grep -l "func.*{" {} \; 2>/dev/null | grep -v "_test.go"; then \
+		echo "❌ Ports should only contain interfaces"; \
+		exit 1; \
+	else \
+		echo "✅ Ports contain only interfaces"; \
+	fi
+
+# Development helpers
+new-entity: ## Create a new domain entity (usage: make new-entity name=User)
+	@if [ -z "$(name)" ]; then echo "Usage: make new-entity name=EntityName"; exit 1; fi
+	foundry add entity $(name)
+
+new-service: ## Create a new domain service (usage: make new-service name=User)
+	@if [ -z "$(name)" ]; then echo "Usage: make new-service name=ServiceName"; exit 1; fi
+	foundry add service $(name)
+
+new-http-adapter: ## Create a new HTTP adapter (usage: make new-http-adapter name=User)
+	@if [ -z "$(name)" ]; then echo "Usage: make new-http-adapter name=AdapterName"; exit 1; fi
+	foundry add http_adapter $(name)
+
+new-repository: ## Create a new repository adapter (usage: make new-repository name=User)
+	@if [ -z "$(name)" ]; then echo "Usage: make new-repository name=RepositoryName"; exit 1; fi
+	foundry add repository_adapter $(name)
+
+.DEFAULT_GOAL := help

@@ -1,0 +1,457 @@
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+
+	"github.com/gorilla/mux"
+	"{{.ModuleName}}/internal/models"
+	"{{.ModuleName}}/internal/services"
+	"{{.ModuleName}}/pkg/errors"
+)
+
+// {{.ComponentName | title}}APIHandler handles API requests for {{.ComponentName | snake_case}} operations
+type {{.ComponentName | title}}APIHandler struct {
+	service services.{{.ComponentName | title}}Service
+}
+
+// New{{.ComponentName | title}}APIHandler creates a new {{.ComponentName | snake_case}} API handler
+func New{{.ComponentName | title}}APIHandler(service services.{{.ComponentName | title}}Service) *{{.ComponentName | title}}APIHandler {
+	return &{{.ComponentName | title}}APIHandler{
+		service: service,
+	}
+}
+
+// List handles GET /api/v1/{{.ComponentName | snake_case | plural}}
+func (h *{{.ComponentName | title}}APIHandler) List(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Parse query parameters
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page <= 0 {
+		page = 1
+	}
+
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	// Get search/filter parameters
+	search := r.URL.Query().Get("search")
+	status := r.URL.Query().Get("status")
+	sortBy := r.URL.Query().Get("sort_by")
+	sortOrder := r.URL.Query().Get("sort_order")
+
+	// Create filter
+	filter := &models.{{.ComponentName | title}}Filter{
+		Page:      page,
+		Limit:     limit,
+		Search:    search,
+		Status:    status,
+		SortBy:    sortBy,
+		SortOrder: sortOrder,
+	}
+
+	{{.ComponentName | snake_case | plural}}, total, err := h.service.List(ctx, filter)
+	if err != nil {
+		h.handleError(w, err, "Failed to retrieve {{.ComponentName | snake_case | plural}}")
+		return
+	}
+
+	response := map[string]interface{}{
+		"data": {{.ComponentName | snake_case | plural}},
+		"pagination": map[string]interface{}{
+			"page":       page,
+			"limit":      limit,
+			"total":      total,
+			"total_pages": (total + int64(limit) - 1) / int64(limit),
+		},
+		"filters": map[string]interface{}{
+			"search":     search,
+			"status":     status,
+			"sort_by":    sortBy,
+			"sort_order": sortOrder,
+		},
+	}
+
+	h.writeJSONResponse(w, http.StatusOK, response)
+}
+
+// Get handles GET /api/v1/{{.ComponentName | snake_case | plural}}/{id}
+func (h *{{.ComponentName | title}}APIHandler) Get(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+
+	id, err := strconv.ParseInt(vars["id"], 10, 64)
+	if err != nil {
+		h.handleError(w, errors.NewValidationError("Invalid ID format"), "Invalid ID")
+		return
+	}
+
+	{{.ComponentName | snake_case}}, err := h.service.GetByID(ctx, id)
+	if err != nil {
+		h.handleError(w, err, "{{.ComponentName | title}} not found")
+		return
+	}
+
+	h.writeJSONResponse(w, http.StatusOK, map[string]interface{}{
+		"data": {{.ComponentName | snake_case}},
+	})
+}
+
+// Create handles POST /api/v1/{{.ComponentName | snake_case | plural}}
+func (h *{{.ComponentName | title}}APIHandler) Create(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req models.Create{{.ComponentName | title}}Request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.handleError(w, errors.NewValidationError("Invalid request body"), "Invalid JSON")
+		return
+	}
+
+	// Validate request
+	if err := req.Validate(); err != nil {
+		h.handleError(w, err, "Validation failed")
+		return
+	}
+
+	{{.ComponentName | snake_case}}, err := h.service.Create(ctx, &req)
+	if err != nil {
+		h.handleError(w, err, "Failed to create {{.ComponentName | snake_case}}")
+		return
+	}
+
+	h.writeJSONResponse(w, http.StatusCreated, map[string]interface{}{
+		"data":    {{.ComponentName | snake_case}},
+		"message": "{{.ComponentName | title}} created successfully",
+	})
+}
+
+// Update handles PUT /api/v1/{{.ComponentName | snake_case | plural}}/{id}
+func (h *{{.ComponentName | title}}APIHandler) Update(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+
+	id, err := strconv.ParseInt(vars["id"], 10, 64)
+	if err != nil {
+		h.handleError(w, errors.NewValidationError("Invalid ID format"), "Invalid ID")
+		return
+	}
+
+	var req models.Update{{.ComponentName | title}}Request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.handleError(w, errors.NewValidationError("Invalid request body"), "Invalid JSON")
+		return
+	}
+
+	// Validate request
+	if err := req.Validate(); err != nil {
+		h.handleError(w, err, "Validation failed")
+		return
+	}
+
+	{{.ComponentName | snake_case}}, err := h.service.Update(ctx, id, &req)
+	if err != nil {
+		h.handleError(w, err, "Failed to update {{.ComponentName | snake_case}}")
+		return
+	}
+
+	h.writeJSONResponse(w, http.StatusOK, map[string]interface{}{
+		"data":    {{.ComponentName | snake_case}},
+		"message": "{{.ComponentName | title}} updated successfully",
+	})
+}
+
+// Delete handles DELETE /api/v1/{{.ComponentName | snake_case | plural}}/{id}
+func (h *{{.ComponentName | title}}APIHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+
+	id, err := strconv.ParseInt(vars["id"], 10, 64)
+	if err != nil {
+		h.handleError(w, errors.NewValidationError("Invalid ID format"), "Invalid ID")
+		return
+	}
+
+	err = h.service.Delete(ctx, id)
+	if err != nil {
+		h.handleError(w, err, "Failed to delete {{.ComponentName | snake_case}}")
+		return
+	}
+
+	h.writeJSONResponse(w, http.StatusOK, map[string]interface{}{
+		"message": "{{.ComponentName | title}} deleted successfully",
+	})
+}
+
+// Patch handles PATCH /api/v1/{{.ComponentName | snake_case | plural}}/{id}
+func (h *{{.ComponentName | title}}APIHandler) Patch(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+
+	id, err := strconv.ParseInt(vars["id"], 10, 64)
+	if err != nil {
+		h.handleError(w, errors.NewValidationError("Invalid ID format"), "Invalid ID")
+		return
+	}
+
+	var updates map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+		h.handleError(w, errors.NewValidationError("Invalid request body"), "Invalid JSON")
+		return
+	}
+
+	{{.ComponentName | snake_case}}, err := h.service.Patch(ctx, id, updates)
+	if err != nil {
+		h.handleError(w, err, "Failed to patch {{.ComponentName | snake_case}}")
+		return
+	}
+
+	h.writeJSONResponse(w, http.StatusOK, map[string]interface{}{
+		"data":    {{.ComponentName | snake_case}},
+		"message": "{{.ComponentName | title}} updated successfully",
+	})
+}
+
+// Search handles GET /api/v1/{{.ComponentName | snake_case | plural}}/search
+func (h *{{.ComponentName | title}}APIHandler) Search(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Parse query parameters
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		h.handleError(w, errors.NewValidationError("Search query is required"), "Missing search query")
+		return
+	}
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page <= 0 {
+		page = 1
+	}
+
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	// Create search filter
+	filter := &models.{{.ComponentName | title}}Filter{
+		Page:   page,
+		Limit:  limit,
+		Search: query,
+	}
+
+	{{.ComponentName | snake_case | plural}}, total, err := h.service.Search(ctx, filter)
+	if err != nil {
+		h.handleError(w, err, "Search failed")
+		return
+	}
+
+	response := map[string]interface{}{
+		"data": {{.ComponentName | snake_case | plural}},
+		"pagination": map[string]interface{}{
+			"page":        page,
+			"limit":       limit,
+			"total":       total,
+			"total_pages": (total + int64(limit) - 1) / int64(limit),
+		},
+		"query": query,
+	}
+
+	h.writeJSONResponse(w, http.StatusOK, response)
+}
+
+// Stats handles GET /api/v1/{{.ComponentName | snake_case | plural}}/stats
+func (h *{{.ComponentName | title}}APIHandler) Stats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	stats, err := h.service.GetStats(ctx)
+	if err != nil {
+		h.handleError(w, err, "Failed to retrieve statistics")
+		return
+	}
+
+	h.writeJSONResponse(w, http.StatusOK, map[string]interface{}{
+		"data": stats,
+	})
+}
+
+// BulkDelete handles DELETE /api/v1/{{.ComponentName | snake_case | plural}}/bulk
+func (h *{{.ComponentName | title}}APIHandler) BulkDelete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req struct {
+		IDs []int64 `json:"ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.handleError(w, errors.NewValidationError("Invalid request body"), "Invalid JSON")
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		h.handleError(w, errors.NewValidationError("No IDs provided"), "Missing IDs")
+		return
+	}
+
+	if len(req.IDs) > 100 {
+		h.handleError(w, errors.NewValidationError("Too many IDs"), "Maximum 100 IDs allowed")
+		return
+	}
+
+	deletedCount, err := h.service.BulkDelete(ctx, req.IDs)
+	if err != nil {
+		h.handleError(w, err, "Bulk delete failed")
+		return
+	}
+
+	h.writeJSONResponse(w, http.StatusOK, map[string]interface{}{
+		"message": "{{.ComponentName | title | plural}} deleted successfully",
+		"deleted_count": deletedCount,
+	})
+}
+
+// Export handles GET /api/v1/{{.ComponentName | snake_case | plural}}/export
+func (h *{{.ComponentName | title}}APIHandler) Export(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "json"
+	}
+
+	// Create filter for export
+	filter := &models.{{.ComponentName | title}}Filter{
+		Page:  1,
+		Limit: 10000, // Large limit for export
+	}
+
+	{{.ComponentName | snake_case | plural}}, _, err := h.service.List(ctx, filter)
+	if err != nil {
+		h.handleError(w, err, "Export failed")
+		return
+	}
+
+	switch format {
+	case "csv":
+		h.exportCSV(w, {{.ComponentName | snake_case | plural}})
+	case "json":
+		fallthrough
+	default:
+		h.writeJSONResponse(w, http.StatusOK, map[string]interface{}{
+			"data": {{.ComponentName | snake_case | plural}},
+			"count": len({{.ComponentName | snake_case | plural}}),
+		})
+	}
+}
+
+// Helper methods
+
+// writeJSONResponse writes a JSON response
+func (h *{{.ComponentName | title}}APIHandler) writeJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+// handleError handles API errors with proper HTTP status codes
+func (h *{{.ComponentName | title}}APIHandler) handleError(w http.ResponseWriter, err error, message string) {
+	var statusCode int
+	var errorType string
+
+	switch {
+	case errors.IsValidationError(err):
+		statusCode = http.StatusBadRequest
+		errorType = "validation_error"
+	case errors.IsNotFoundError(err):
+		statusCode = http.StatusNotFound
+		errorType = "not_found"
+	case errors.IsAuthenticationError(err):
+		statusCode = http.StatusUnauthorized
+		errorType = "authentication_error"
+	case errors.IsAuthorizationError(err):
+		statusCode = http.StatusForbidden
+		errorType = "authorization_error"
+	case errors.IsConflictError(err):
+		statusCode = http.StatusConflict
+		errorType = "conflict_error"
+	default:
+		statusCode = http.StatusInternalServerError
+		errorType = "internal_error"
+	}
+
+	response := map[string]interface{}{
+		"error": map[string]interface{}{
+			"type":    errorType,
+			"message": message,
+			"details": err.Error(),
+		},
+	}
+
+	h.writeJSONResponse(w, statusCode, response)
+}
+
+// exportCSV exports data as CSV
+func (h *{{.ComponentName | title}}APIHandler) exportCSV(w http.ResponseWriter, {{.ComponentName | snake_case | plural}} []*models.{{.ComponentName | title}}) {
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment; filename={{.ComponentName | snake_case | plural}}.csv")
+
+	// TODO: Implement CSV export
+	// Example:
+	// writer := csv.NewWriter(w)
+	// defer writer.Flush()
+	//
+	// // Write header
+	// writer.Write([]string{"ID", "Name", "Created At", "Updated At"})
+	//
+	// // Write data
+	// for _, item := range {{.ComponentName | snake_case | plural}} {
+	//     writer.Write([]string{
+	//         strconv.FormatInt(item.ID, 10),
+	//         item.Name,
+	//         item.CreatedAt.Format(time.RFC3339),
+	//         item.UpdatedAt.Format(time.RFC3339),
+	//     })
+	// }
+
+	// Placeholder implementation
+	w.Write([]byte("CSV export not implemented yet"))
+}
+
+// RegisterRoutes registers all {{.ComponentName | snake_case}} API routes
+func (h *{{.ComponentName | title}}APIHandler) RegisterRoutes(router *mux.Router) {
+	// Standard CRUD routes
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}", h.List).Methods("GET")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}", h.Create).Methods("POST")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/{id:[0-9]+}", h.Get).Methods("GET")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/{id:[0-9]+}", h.Update).Methods("PUT")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/{id:[0-9]+}", h.Patch).Methods("PATCH")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/{id:[0-9]+}", h.Delete).Methods("DELETE")
+
+	// Additional routes
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/search", h.Search).Methods("GET")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/stats", h.Stats).Methods("GET")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/bulk", h.BulkDelete).Methods("DELETE")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/export", h.Export).Methods("GET")
+
+	// OPTIONS for CORS
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}", h.handleOptions).Methods("OPTIONS")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/{id:[0-9]+}", h.handleOptions).Methods("OPTIONS")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/search", h.handleOptions).Methods("OPTIONS")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/stats", h.handleOptions).Methods("OPTIONS")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/bulk", h.handleOptions).Methods("OPTIONS")
+	router.HandleFunc("/{{.ComponentName | snake_case | plural}}/export", h.handleOptions).Methods("OPTIONS")
+}
+
+// handleOptions handles CORS preflight requests
+func (h *{{.ComponentName | title}}APIHandler) handleOptions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+	w.WriteHeader(http.StatusOK)
+}

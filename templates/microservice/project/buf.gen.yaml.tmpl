@@ -1,0 +1,137 @@
+# Buf code generation configuration for {{.ProjectName}}
+# This file configures how protocol buffers are compiled to Go code
+
+version: v1
+
+# Managed mode configuration
+managed:
+  enabled: true
+  go_package_prefix:
+    default: {{.ModuleName}}
+    except:
+      - buf.build/googleapis/googleapis
+      - buf.build/grpc-ecosystem/grpc-gateway
+  optimize_for: SPEED
+
+# Code generation plugins
+plugins:
+  # Go protocol buffer plugin
+  - plugin: buf.build/protocolbuffers/go:v1.31.0
+    out: .
+    opt:
+      - paths=source_relative
+      - module={{.ModuleName}}
+
+  # Go gRPC plugin
+  - plugin: buf.build/grpc/go:v1.3.0
+    out: .
+    opt:
+      - paths=source_relative
+      - module={{.ModuleName}}
+
+  # gRPC-Gateway plugin for REST API generation
+  - plugin: buf.build/grpc-ecosystem/gateway:v2.18.0
+    out: .
+    opt:
+      - paths=source_relative
+      - module={{.ModuleName}}
+      - generate_unbound_methods=true
+
+  # OpenAPI/Swagger documentation plugin
+  - plugin: buf.build/grpc-ecosystem/openapiv2:v2.18.0
+    out: docs/api
+    opt:
+      - logtostderr=true
+      - json_names_for_fields=false
+      - include_package_in_tags=true
+
+  # Go gRPC validation plugin (optional)
+  - plugin: buf.build/bufbuild/validate-go:v1.0.0
+    out: .
+    opt:
+      - paths=source_relative
+      - module={{.ModuleName}}
+
+  # Connect-Go plugin for modern gRPC (optional alternative)
+  # - plugin: buf.build/connectrpc/go:v1.11.0
+  #   out: .
+  #   opt:
+  #     - paths=source_relative
+  #     - module={{.ModuleName}}
+
+  # TypeScript definitions (if building web clients)
+  # - plugin: buf.build/bufbuild/es:v1.3.0
+  #   out: web/src/generated
+  #   opt:
+  #     - target=ts
+
+# Input configuration
+inputs:
+  - directory: api/proto
+    exclude:
+      - api/proto/vendor
+      - api/proto/third_party
+  - directory: shared/proto
+    exclude:
+      - shared/proto/vendor
+      - shared/proto/third_party
+
+# Template configuration for different environments
+templates:
+  # Production template
+  - name: production
+    plugins:
+      - plugin: buf.build/protocolbuffers/go:v1.31.0
+        out: .
+        opt:
+          - paths=source_relative
+          - module={{.ModuleName}}
+      - plugin: buf.build/grpc/go:v1.3.0
+        out: .
+        opt:
+          - paths=source_relative
+          - module={{.ModuleName}}
+      - plugin: buf.build/grpc-ecosystem/gateway:v2.18.0
+        out: .
+        opt:
+          - paths=source_relative
+          - module={{.ModuleName}}
+
+  # Development template with additional tooling
+  - name: development
+    plugins:
+      - plugin: buf.build/protocolbuffers/go:v1.31.0
+        out: .
+        opt:
+          - paths=source_relative
+          - module={{.ModuleName}}
+      - plugin: buf.build/grpc/go:v1.3.0
+        out: .
+        opt:
+          - paths=source_relative
+          - module={{.ModuleName}}
+      - plugin: buf.build/grpc-ecosystem/gateway:v2.18.0
+        out: .
+        opt:
+          - paths=source_relative
+          - module={{.ModuleName}}
+      - plugin: buf.build/grpc-ecosystem/openapiv2:v2.18.0
+        out: docs/api
+        opt:
+          - logtostderr=true
+      - plugin: buf.build/bufbuild/validate-go:v1.0.0
+        out: .
+        opt:
+          - paths=source_relative
+          - module={{.ModuleName}}
+
+  # Documentation only template
+  - name: docs
+    plugins:
+      - plugin: buf.build/grpc-ecosystem/openapiv2:v2.18.0
+        out: docs/api
+        opt:
+          - logtostderr=true
+          - json_names_for_fields=false
+          - include_package_in_tags=true
+          - grpc_api_configuration=api/proto/{{.CustomVariables.service_name | default "user"}}.yaml

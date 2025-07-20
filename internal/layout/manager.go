@@ -41,14 +41,78 @@ func NewManager(configPath string) (*Manager, error) {
 	}, nil
 }
 
-// ListLayouts returns all available layouts
+// Replace the existing ListLayouts method in internal/layout/manager.go
+
+// ListLayouts returns all available layouts (embedded + registry)
 func (m *Manager) ListLayouts() []LayoutListEntry {
-	return m.registry.ListLayouts()
+	var layouts []LayoutListEntry
+
+	// Add embedded layouts first (built-in templates)
+	embeddedLayouts := GetEmbeddedLayoutList()
+	layouts = append(layouts, embeddedLayouts...)
+
+	// Add registry layouts (user/external templates)
+	registryLayouts := m.registry.ListLayouts()
+	layouts = append(layouts, registryLayouts...)
+
+	return layouts
 }
 
-// GetLayout retrieves a specific layout
+// Replace the GetLayout method in internal/layout/manager.go
+
+// GetLayout retrieves a specific layout (embedded first, then registry)
 func (m *Manager) GetLayout(ctx context.Context, name string) (*Layout, error) {
+	// Check embedded layouts first
+	embeddedLayouts := GetEmbeddedLayouts()
+	for _, layoutName := range embeddedLayouts {
+		if layoutName == name {
+			return m.loadEmbeddedLayout(name)
+		}
+	}
+
+	// Fall back to registry/loader
 	return m.loader.Load(ctx, name)
+}
+
+// loadEmbeddedLayout loads a layout from embedded templates
+func (m *Manager) loadEmbeddedLayout(name string) (*Layout, error) {
+	// Parse manifest
+	manifest, err := ParseEmbeddedManifest(name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse embedded manifest: %w", err)
+	}
+
+	// Load all template files
+	templates := make(map[string]string)
+
+	// Load project templates
+	for _, file := range manifest.Structure.Files {
+		content, err := GetEmbeddedTemplateFile(name, file.Template)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load template %s: %w", file.Template, err)
+		}
+		templates[file.Template] = string(content)
+	}
+
+	// Load component templates
+	for _, component := range manifest.Components {
+		content, err := GetEmbeddedTemplateFile(name, component.Template)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load component template %s: %w", component.Template, err)
+		}
+		templates[component.Template] = string(content)
+	}
+
+	return &Layout{
+		Name:    name,
+		Version: manifest.Version,
+		Source: LayoutSource{
+			Type:     "embedded",
+			Location: "built-in",
+		},
+		Manifest:  manifest, // ← Just manifest, not *manifest
+		Templates: templates,
+	}, nil
 }
 
 // AddRemoteLayout adds a remote layout to the registry

@@ -1,0 +1,527 @@
+package observability
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
+)
+
+// TracingConfig holds tracing configuration
+type TracingConfig struct {
+	Enabled        bool
+	ServiceName    string
+	ServiceVersion string
+	Environment    string
+	JaegerEndpoint string
+	SampleRate     float64
+}
+
+// Tracer provides tracing functionality
+type Tracer struct {
+	tracer   trace.Tracer
+	provider *tracesdk.TracerProvider
+	logger   *zap.Logger
+	config   TracingConfig
+}
+
+// NewTracer creates a new tracer instance
+func NewTracer(config TracingConfig, logger *zap.Logger) (*Tracer, error) {
+	if !config.Enabled {
+		// Return a no-op tracer if tracing is disabled
+		return &Tracer{
+			tracer: otel.Tracer("noop"),
+			logger: logger,
+			config: config,
+		}, nil
+	}
+
+	// Create Jaeger exporter
+	exp, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(config.JaegerEndpoint)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Jaeger exporter: %w", err)
+	}
+
+	// Create resource
+	res, err := resource.New(
+		context.Background(),
+		resource.WithAttributes(
+			semconv.ServiceNameKey.String(config.ServiceName),
+			semconv.ServiceVersionKey.String(config.ServiceVersion),
+			semconv.DeploymentEnvironmentKey.String(config.Environment),
+			attribute.String("service.namespace", "{{.ProjectName | lower}}"),
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create resource: %w", err)
+	}
+
+	// Create tracer provider
+	tp := tracesdk.NewTracerProvider(
+		tracesdk.WithBatcher(exp),
+		tracesdk.WithResource(res),
+		tracesdk.WithSampler(tracesdk.TraceIDRatioBased(config.SampleRate)),
+	)
+
+	// Set global tracer provider
+	otel.SetTracerProvider(tp)
+
+	// Set global propagator
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+
+	// Create tracer
+	tracer := tp.Tracer("{{.ProjectName | lower}}/{{.CustomVariables.service_name | default "user"}}")
+
+	logger.Info("Tracing initialized",
+		zap.String("service", config.ServiceName),
+		zap.String("endpoint", config.JaegerEndpoint),
+		zap.Float64("sample_rate", config.SampleRate),
+	)
+
+	return &Tracer{
+		tracer:   tracer,
+		provider: tp,
+		logger:   logger,
+		config:   config,
+	}, nil
+}
+
+// Close shuts down the tracer provider
+func (t *Tracer) Close(ctx context.Context) error {
+	if t.provider != nil {
+		return t.provider.Shutdown(ctx)
+	}
+	return nil
+}
+
+// StartSpan starts a new span
+func (t *Tracer) StartSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+	return t.tracer.Start(ctx, name, opts...)
+}
+
+// StartHTTPSpan starts a span for HTTP requests
+func (t *Tracer) StartHTTPSpan(ctx context.Context, method, path string) (context.Context, trace.Span) {
+	spanName := fmt.Sprintf("HTTP %s %s", method, path)
+
+	ctx, span := t.tracer.Start(ctx, spanName,
+		trace.WithAttributes(
+			semconv.HTTPMethodKey.String(method),
+			semconv.HTTPRouteKey.String(path),
+			semconv.HTTPSchemeKey.String("http"),
+		),
+		trace.WithSpanKind(trace.SpanKindServer),
+	)
+
+	return ctx, span
+}
+
+// StartGRPCSpan starts a span for gRPC requests
+func (t *Tracer) StartGRPCSpan(ctx context.Context, service, method string) (context.Context, trace.Span) {
+	spanName := fmt.Sprintf("/%s/%s", service, method)
+
+	ctx, span := t.tracer.Start(ctx, spanName,
+		trace.WithAttributes(
+			semconv.RPCSystemKey.String("grpc"),
+			semconv.RPCServiceKey.String(service),
+			semconv.RPCMethodKey.String(method),
+		),
+		trace.WithSpanKind(trace.SpanKindServer),
+	)
+
+	return ctx, span
+}
+
+// StartDatabaseSpan starts a span for database operations
+func (t *Tracer) StartDatabaseSpan(ctx context.Context, operation, table string) (context.Context, trace.Span) {
+	spanName := fmt.Sprintf("db.%s %s", operation, table)
+
+	ctx, span := t.tracer.Start(ctx, spanName,
+		trace.WithAttributes(
+			semconv.DBSystemKey.String("{{.CustomVariables.database_driver | default "postgres"}}"),
+			semconv.DBOperationKey.String(operation),
+			semconv.DBSQLTableKey.String(table),
+		),
+		trace.WithSpanKind(trace.SpanKindClient),
+	)
+
+	return ctx, span
+}
+
+// StartCacheSpan starts a span for cache operations
+func (t *Tracer) StartCacheSpan(ctx context.Context, operation, key string) (context.Context, trace.Span) {
+	spanName := fmt.Sprintf("cache.%s", operation)
+
+	ctx, span := t.tracer.Start(ctx, spanName,
+		trace.WithAttributes(
+			attribute.String("cache.operation", operation),
+			attribute.String("cache.key", key),
+			attribute.String("cache.system", "redis"),
+		),
+		trace.WithSpanKind(trace.SpanKindClient),
+	)
+
+	return ctx, span
+}
+
+// StartMessageSpan starts a span for message broker operations
+func (t *Tracer) StartMessageSpan(ctx context.Context, operation, topic string) (context.Context, trace.Span) {
+	spanName := fmt.Sprintf("message.%s %s", operation, topic)
+
+	ctx, span := t.tracer.Start(ctx, spanName,
+		trace.WithAttributes(
+			semconv.MessagingSystemKey.String("{{.CustomVariables.message_broker | default "nats"}}"),
+			semconv.MessagingOperationKey.String(operation),
+			semconv.MessagingDestinationKey.String(topic),
+		),
+		trace.WithSpanKind(getMessageSpanKind(operation)),
+	)
+
+	return ctx, span
+}
+
+// StartExternalServiceSpan starts a span for external service calls
+func (t *Tracer) StartExternalServiceSpan(ctx context.Context, service, endpoint string) (context.Context, trace.Span) {
+	spanName := fmt.Sprintf("external.%s", service)
+
+	ctx, span := t.tracer.Start(ctx, spanName,
+		trace.WithAttributes(
+			attribute.String("service.name", service),
+			attribute.String("service.endpoint", endpoint),
+		),
+		trace.WithSpanKind(trace.SpanKindClient),
+	)
+
+	return ctx, span
+}
+
+// StartBusinessSpan starts a span for business operations
+func (t *Tracer) StartBusinessSpan(ctx context.Context, operation string) (context.Context, trace.Span) {
+	spanName := fmt.Sprintf("business.%s", operation)
+
+	ctx, span := t.tracer.Start(ctx, spanName,
+		trace.WithAttributes(
+			attribute.String("business.operation", operation),
+			attribute.String("component", "business_logic"),
+		),
+		trace.WithSpanKind(trace.SpanKindInternal),
+	)
+
+	return ctx, span
+}
+
+// RecordHTTPResponse records HTTP response information in span
+func (t *Tracer) RecordHTTPResponse(span trace.Span, statusCode int, responseSize int64) {
+	span.SetAttributes(
+		semconv.HTTPStatusCodeKey.Int(statusCode),
+		semconv.HTTPResponseSizeKey.Int64(responseSize),
+	)
+
+	if statusCode >= 400 {
+		span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", statusCode))
+	}
+}
+
+// RecordGRPCResponse records gRPC response information in span
+func (t *Tracer) RecordGRPCResponse(span trace.Span, code string, err error) {
+	span.SetAttributes(
+		semconv.RPCGRPCStatusCodeKey.String(code),
+	)
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+}
+
+// RecordDatabaseQuery records database query information in span
+func (t *Tracer) RecordDatabaseQuery(span trace.Span, query string, rowsAffected int64, err error) {
+	span.SetAttributes(
+		semconv.DBStatementKey.String(query),
+	)
+
+	if rowsAffected > 0 {
+		span.SetAttributes(
+			attribute.Int64("db.rows_affected", rowsAffected),
+		)
+	}
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+}
+
+// RecordCacheOperation records cache operation information in span
+func (t *Tracer) RecordCacheOperation(span trace.Span, hit bool, err error) {
+	span.SetAttributes(
+		attribute.Bool("cache.hit", hit),
+	)
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+}
+
+// RecordMessageOperation records message operation information in span
+func (t *Tracer) RecordMessageOperation(span trace.Span, messageID string, messageSize int64, err error) {
+	span.SetAttributes(
+		semconv.MessagingMessageIDKey.String(messageID),
+		semconv.MessagingMessagePayloadSizeBytesKey.Int64(messageSize),
+	)
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+}
+
+// RecordExternalServiceCall records external service call information in span
+func (t *Tracer) RecordExternalServiceCall(span trace.Span, statusCode int, err error) {
+	span.SetAttributes(
+		attribute.Int("http.status_code", statusCode),
+	)
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	} else if statusCode >= 400 {
+		span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", statusCode))
+	}
+}
+
+// RecordBusinessOperation records business operation information in span
+func (t *Tracer) RecordBusinessOperation(span trace.Span, result string, err error) {
+	span.SetAttributes(
+		attribute.String("business.result", result),
+	)
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+}
+
+// AddSpanEvent adds an event to a span
+func (t *Tracer) AddSpanEvent(span trace.Span, name string, attrs ...attribute.KeyValue) {
+	span.AddEvent(name, trace.WithAttributes(attrs...))
+}
+
+// AddSpanAttributes adds attributes to a span
+func (t *Tracer) AddSpanAttributes(span trace.Span, attrs ...attribute.KeyValue) {
+	span.SetAttributes(attrs...)
+}
+
+// SetSpanError sets error status on a span
+func (t *Tracer) SetSpanError(span trace.Span, err error) {
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
+}
+
+// SetSpanStatus sets custom status on a span
+func (t *Tracer) SetSpanStatus(span trace.Span, code codes.Code, description string) {
+	span.SetStatus(code, description)
+}
+
+// GetTraceID extracts trace ID from context
+func (t *Tracer) GetTraceID(ctx context.Context) string {
+	span := trace.SpanFromContext(ctx)
+	if span.SpanContext().IsValid() {
+		return span.SpanContext().TraceID().String()
+	}
+	return ""
+}
+
+// GetSpanID extracts span ID from context
+func (t *Tracer) GetSpanID(ctx context.Context) string {
+	span := trace.SpanFromContext(ctx)
+	if span.SpanContext().IsValid() {
+		return span.SpanContext().SpanID().String()
+	}
+	return ""
+}
+
+// InjectTraceContext injects trace context into carrier
+func (t *Tracer) InjectTraceContext(ctx context.Context, carrier propagation.TextMapCarrier) {
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+}
+
+// ExtractTraceContext extracts trace context from carrier
+func (t *Tracer) ExtractTraceContext(ctx context.Context, carrier propagation.TextMapCarrier) context.Context {
+	return otel.GetTextMapPropagator().Extract(ctx, carrier)
+}
+
+// WithSpanContext creates a new context with span
+func (t *Tracer) WithSpanContext(ctx context.Context, span trace.Span) context.Context {
+	return trace.ContextWithSpan(ctx, span)
+}
+
+// TraceWrapper provides a convenient way to trace function calls
+type TraceWrapper struct {
+	tracer *Tracer
+	name   string
+}
+
+// NewTraceWrapper creates a new trace wrapper
+func (t *Tracer) NewTraceWrapper(name string) *TraceWrapper {
+	return &TraceWrapper{
+		tracer: t,
+		name:   name,
+	}
+}
+
+// Trace wraps a function with tracing
+func (tw *TraceWrapper) Trace(ctx context.Context, fn func(ctx context.Context) error, attrs ...attribute.KeyValue) error {
+	ctx, span := tw.tracer.StartSpan(ctx, tw.name, trace.WithAttributes(attrs...))
+	defer span.End()
+
+	err := fn(ctx)
+	if err != nil {
+		tw.tracer.SetSpanError(span, err)
+	}
+
+	return err
+}
+
+// TraceWithResult wraps a function with tracing and returns a result
+func (tw *TraceWrapper) TraceWithResult(ctx context.Context, fn func(ctx context.Context) (interface{}, error), attrs ...attribute.KeyValue) (interface{}, error) {
+	ctx, span := tw.tracer.StartSpan(ctx, tw.name, trace.WithAttributes(attrs...))
+	defer span.End()
+
+	result, err := fn(ctx)
+	if err != nil {
+		tw.tracer.SetSpanError(span, err)
+	}
+
+	return result, err
+}
+
+// Helper functions
+
+func getMessageSpanKind(operation string) trace.SpanKind {
+	switch operation {
+	case "publish", "send":
+		return trace.SpanKindProducer
+	case "consume", "receive":
+		return trace.SpanKindConsumer
+	default:
+		return trace.SpanKindClient
+	}
+}
+
+// Common span attributes for the service
+var (
+	ServiceNameAttr    = attribute.String("service.name", "{{.CustomVariables.service_name | default "user"}}-service")
+	ServiceVersionAttr = attribute.String("service.version", "1.0.0")
+	EnvironmentAttr    = attribute.String("environment", "{{.CustomVariables.environment | default "development"}}")
+)
+
+// Business operation attributes
+func BusinessOperationAttrs(operation, entity string) []attribute.KeyValue {
+	return []attribute.KeyValue{
+		attribute.String("business.operation", operation),
+		attribute.String("business.entity", entity),
+		attribute.String("component", "business_logic"),
+	}
+}
+
+// Repository operation attributes
+func RepositoryOperationAttrs(operation, entity string) []attribute.KeyValue {
+	return []attribute.KeyValue{
+		attribute.String("repository.operation", operation),
+		attribute.String("repository.entity", entity),
+		attribute.String("component", "repository"),
+	}
+}
+
+// Service operation attributes
+func ServiceOperationAttrs(operation, entity string) []attribute.KeyValue {
+	return []attribute.KeyValue{
+		attribute.String("service.operation", operation),
+		attribute.String("service.entity", entity),
+		attribute.String("component", "service"),
+	}
+}
+
+// Handler operation attributes
+func HandlerOperationAttrs(handlerType, operation string) []attribute.KeyValue {
+	return []attribute.KeyValue{
+		attribute.String("handler.type", handlerType),
+		attribute.String("handler.operation", operation),
+		attribute.String("component", "handler"),
+	}
+}
+
+// TimedOperation provides timing and tracing for operations
+type TimedOperation struct {
+	tracer    *Tracer
+	startTime time.Time
+	span      trace.Span
+}
+
+// StartTimedOperation starts a timed operation with tracing
+func (t *Tracer) StartTimedOperation(ctx context.Context, name string, attrs ...attribute.KeyValue) (*TimedOperation, context.Context) {
+	ctx, span := t.StartSpan(ctx, name, trace.WithAttributes(attrs...))
+
+	return &TimedOperation{
+		tracer:    t,
+		startTime: time.Now(),
+		span:      span,
+	}, ctx
+}
+
+// End ends the timed operation and records duration
+func (to *TimedOperation) End(err error) time.Duration {
+	duration := time.Since(to.startTime)
+
+	to.span.SetAttributes(
+		attribute.Int64("operation.duration_ms", duration.Milliseconds()),
+	)
+
+	if err != nil {
+		to.tracer.SetSpanError(to.span, err)
+	}
+
+	to.span.End()
+	return duration
+}
+
+// EndWithResult ends the timed operation with a result
+func (to *TimedOperation) EndWithResult(result string, err error) time.Duration {
+	duration := time.Since(to.startTime)
+
+	to.span.SetAttributes(
+		attribute.Int64("operation.duration_ms", duration.Milliseconds()),
+		attribute.String("operation.result", result),
+	)
+
+	if err != nil {
+		to.tracer.SetSpanError(to.span, err)
+	}
+
+	to.span.End()
+	return duration
+}
+
+// AddEvent adds an event to the timed operation
+func (to *TimedOperation) AddEvent(name string, attrs ...attribute.KeyValue) {
+	to.tracer.AddSpanEvent(to.span, name, attrs...)
+}
+
+// AddAttributes adds attributes to the timed operation
+func (to *TimedOperation) AddAttributes(attrs ...attribute.KeyValue) {
+	to.tracer.AddSpanAttributes(to.span, attrs...)
+}

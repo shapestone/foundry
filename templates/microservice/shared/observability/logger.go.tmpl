@@ -1,0 +1,470 @@
+package observability
+
+import (
+	"context"
+	"os"
+	"strings"
+	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+)
+
+// Logger wraps zap logger with additional functionality
+type Logger struct {
+	*zap.Logger
+	level zapcore.Level
+}
+
+// NewLogger creates a new logger instance
+func NewLogger() *Logger {
+	// Get log level from environment
+	logLevel := strings.ToLower(os.Getenv("LOG_LEVEL"))
+	if logLevel == "" {
+		logLevel = "info"
+	}
+
+	// Get log format from environment
+	logFormat := strings.ToLower(os.Getenv("LOG_FORMAT"))
+	if logFormat == "" {
+		logFormat = "json"
+	}
+
+	// Parse log level
+	level := parseLogLevel(logLevel)
+
+	// Create encoder config
+	var encoderConfig zapcore.EncoderConfig
+	if logFormat == "json" {
+		encoderConfig = zap.NewProductionEncoderConfig()
+	} else {
+		encoderConfig = zap.NewDevelopmentEncoderConfig()
+		encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	}
+
+	// Configure encoder
+	encoderConfig.TimeKey = "timestamp"
+	encoderConfig.LevelKey = "level"
+	encoderConfig.NameKey = "logger"
+	encoderConfig.CallerKey = "caller"
+	encoderConfig.MessageKey = "message"
+	encoderConfig.StacktraceKey = "stacktrace"
+	encoderConfig.EncodeLevel = zapcore.LowercaseLevelEncoder
+	encoderConfig.EncodeTime = zapcore.RFC3339TimeEncoder
+	encoderConfig.EncodeDuration = zapcore.StringDurationEncoder
+	encoderConfig.EncodeCaller = zapcore.ShortCallerEncoder
+
+	// Create encoder
+	var encoder zapcore.Encoder
+	if logFormat == "json" {
+		encoder = zapcore.NewJSONEncoder(encoderConfig)
+	} else {
+		encoder = zapcore.NewConsoleEncoder(encoderConfig)
+	}
+
+	// Create core
+	core := zapcore.NewCore(
+		encoder,
+		zapcore.AddSync(os.Stdout),
+		level,
+	)
+
+	// Create logger with caller info and stack trace
+	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
+
+	// Add service information
+	serviceName := os.Getenv("SERVICE_NAME")
+	if serviceName == "" {
+		serviceName = "{{.CustomVariables.service_name | default "user"}}-service"
+	}
+
+	serviceVersion := os.Getenv("SERVICE_VERSION")
+	if serviceVersion == "" {
+		serviceVersion = "1.0.0"
+	}
+
+	environment := os.Getenv("ENVIRONMENT")
+	if environment == "" {
+		environment = "development"
+	}
+
+	// Add default fields
+	logger = logger.With(
+		zap.String("service", serviceName),
+		zap.String("version", serviceVersion),
+		zap.String("environment", environment),
+	)
+
+	return &Logger{
+		Logger: logger,
+		level:  level,
+	}
+}
+
+// parseLogLevel parses string log level to zapcore.Level
+func parseLogLevel(level string) zapcore.Level {
+	switch level {
+	case "debug":
+		return zapcore.DebugLevel
+	case "info":
+		return zapcore.InfoLevel
+	case "warn", "warning":
+		return zapcore.WarnLevel
+	case "error":
+		return zapcore.ErrorLevel
+	case "fatal":
+		return zapcore.FatalLevel
+	case "panic":
+		return zapcore.PanicLevel
+	default:
+		return zapcore.InfoLevel
+	}
+}
+
+// WithContext returns a logger with context information
+func (l *Logger) WithContext(ctx context.Context) *zap.Logger {
+	logger := l.Logger
+
+	// Extract request ID from context
+	if requestID := getRequestIDFromContext(ctx); requestID != "" {
+		logger = logger.With(zap.String("request_id", requestID))
+	}
+
+	// Extract user ID from context
+	if userID := getUserIDFromContext(ctx); userID != "" {
+		logger = logger.With(zap.String("user_id", userID))
+	}
+
+	// Extract trace ID from context
+	if traceID := getTraceIDFromContext(ctx); traceID != "" {
+		logger = logger.With(zap.String("trace_id", traceID))
+	}
+
+	return logger
+}
+
+// WithRequestID returns a logger with request ID
+func (l *Logger) WithRequestID(requestID string) *zap.Logger {
+	return l.Logger.With(zap.String("request_id", requestID))
+}
+
+// WithUserID returns a logger with user ID
+func (l *Logger) WithUserID(userID string) *zap.Logger {
+	return l.Logger.With(zap.String("user_id", userID))
+}
+
+// WithComponent returns a logger with component name
+func (l *Logger) WithComponent(component string) *zap.Logger {
+	return l.Logger.With(zap.String("component", component))
+}
+
+// WithOperation returns a logger with operation name
+func (l *Logger) WithOperation(operation string) *zap.Logger {
+	return l.Logger.With(zap.String("operation", operation))
+}
+
+// WithFields returns a logger with additional fields
+func (l *Logger) WithFields(fields map[string]interface{}) *zap.Logger {
+	zapFields := make([]zap.Field, 0, len(fields))
+	for key, value := range fields {
+		zapFields = append(zapFields, zap.Any(key, value))
+	}
+	return l.Logger.With(zapFields...)
+}
+
+// LogRequest logs HTTP request information
+func (l *Logger) LogRequest(ctx context.Context, method, path string, duration time.Duration, statusCode int, userAgent string) {
+	logger := l.WithContext(ctx)
+
+	fields := []zap.Field{
+		zap.String("method", method),
+		zap.String("path", path),
+		zap.Duration("duration", duration),
+		zap.Int("status_code", statusCode),
+		zap.String("user_agent", userAgent),
+	}
+
+	if statusCode >= 500 {
+		logger.Error("Request completed with server error", fields...)
+	} else if statusCode >= 400 {
+		logger.Warn("Request completed with client error", fields...)
+	} else {
+		logger.Info("Request completed", fields...)
+	}
+}
+
+// LogGRPCRequest logs gRPC request information
+func (l *Logger) LogGRPCRequest(ctx context.Context, method string, duration time.Duration, err error) {
+	logger := l.WithContext(ctx)
+
+	fields := []zap.Field{
+		zap.String("grpc_method", method),
+		zap.Duration("duration", duration),
+	}
+
+	if err != nil {
+		fields = append(fields, zap.Error(err))
+		logger.Error("gRPC request failed", fields...)
+	} else {
+		logger.Info("gRPC request completed", fields...)
+	}
+}
+
+// LogDatabaseQuery logs database query information
+func (l *Logger) LogDatabaseQuery(ctx context.Context, query string, duration time.Duration, err error) {
+	logger := l.WithContext(ctx)
+
+	fields := []zap.Field{
+		zap.String("query", query),
+		zap.Duration("duration", duration),
+	}
+
+	if err != nil {
+		fields = append(fields, zap.Error(err))
+		logger.Error("Database query failed", fields...)
+	} else if duration > 100*time.Millisecond {
+		logger.Warn("Slow database query", fields...)
+	} else {
+		logger.Debug("Database query completed", fields...)
+	}
+}
+
+// LogCacheOperation logs cache operation information
+func (l *Logger) LogCacheOperation(ctx context.Context, operation, key string, hit bool, duration time.Duration) {
+	logger := l.WithContext(ctx)
+
+	fields := []zap.Field{
+		zap.String("cache_operation", operation),
+		zap.String("cache_key", key),
+		zap.Bool("cache_hit", hit),
+		zap.Duration("duration", duration),
+	}
+
+	logger.Debug("Cache operation completed", fields...)
+}
+
+// LogMessagePublish logs message publishing information
+func (l *Logger) LogMessagePublish(ctx context.Context, topic, messageID string, err error) {
+	logger := l.WithContext(ctx)
+
+	fields := []zap.Field{
+		zap.String("topic", topic),
+		zap.String("message_id", messageID),
+	}
+
+	if err != nil {
+		fields = append(fields, zap.Error(err))
+		logger.Error("Message publish failed", fields...)
+	} else {
+		logger.Info("Message published", fields...)
+	}
+}
+
+// LogMessageConsume logs message consumption information
+func (l *Logger) LogMessageConsume(ctx context.Context, topic, messageID string, duration time.Duration, err error) {
+	logger := l.WithContext(ctx)
+
+	fields := []zap.Field{
+		zap.String("topic", topic),
+		zap.String("message_id", messageID),
+		zap.Duration("duration", duration),
+	}
+
+	if err != nil {
+		fields = append(fields, zap.Error(err))
+		logger.Error("Message consumption failed", fields...)
+	} else {
+		logger.Info("Message consumed", fields...)
+	}
+}
+
+// LogExternalServiceCall logs external service call information
+func (l *Logger) LogExternalServiceCall(ctx context.Context, service, endpoint string, duration time.Duration, statusCode int, err error) {
+	logger := l.WithContext(ctx)
+
+	fields := []zap.Field{
+		zap.String("external_service", service),
+		zap.String("endpoint", endpoint),
+		zap.Duration("duration", duration),
+		zap.Int("status_code", statusCode),
+	}
+
+	if err != nil {
+		fields = append(fields, zap.Error(err))
+		logger.Error("External service call failed", fields...)
+	} else if statusCode >= 500 {
+		logger.Error("External service returned server error", fields...)
+	} else if statusCode >= 400 {
+		logger.Warn("External service returned client error", fields...)
+	} else {
+		logger.Info("External service call completed", fields...)
+	}
+}
+
+// LogCircuitBreakerEvent logs circuit breaker events
+func (l *Logger) LogCircuitBreakerEvent(ctx context.Context, name, state, event string) {
+	logger := l.WithContext(ctx)
+
+	fields := []zap.Field{
+		zap.String("circuit_breaker", name),
+		zap.String("state", state),
+		zap.String("event", event),
+	}
+
+	logger.Warn("Circuit breaker event", fields...)
+}
+
+// LogHealthCheck logs health check information
+func (l *Logger) LogHealthCheck(ctx context.Context, component string, healthy bool, duration time.Duration, err error) {
+	logger := l.WithContext(ctx)
+
+	fields := []zap.Field{
+		zap.String("component", component),
+		zap.Bool("healthy", healthy),
+		zap.Duration("duration", duration),
+	}
+
+	if err != nil {
+		fields = append(fields, zap.Error(err))
+		logger.Error("Health check failed", fields...)
+	} else if !healthy {
+		logger.Warn("Health check unhealthy", fields...)
+	} else {
+		logger.Debug("Health check passed", fields...)
+	}
+}
+
+// LogStartup logs service startup information
+func (l *Logger) LogStartup(serviceName, version string, config map[string]interface{}) {
+	fields := []zap.Field{
+		zap.String("service", serviceName),
+		zap.String("version", version),
+		zap.Any("config", config),
+	}
+
+	l.Info("Service starting up", fields...)
+}
+
+// LogShutdown logs service shutdown information
+func (l *Logger) LogShutdown(serviceName string, duration time.Duration) {
+	fields := []zap.Field{
+		zap.String("service", serviceName),
+		zap.Duration("shutdown_duration", duration),
+	}
+
+	l.Info("Service shutting down", fields...)
+}
+
+// IsEnabled returns true if the given level is enabled
+func (l *Logger) IsEnabled(level zapcore.Level) bool {
+	return l.level.Enabled(level)
+}
+
+// IsDebugEnabled returns true if debug level is enabled
+func (l *Logger) IsDebugEnabled() bool {
+	return l.IsEnabled(zapcore.DebugLevel)
+}
+
+// IsInfoEnabled returns true if info level is enabled
+func (l *Logger) IsInfoEnabled() bool {
+	return l.IsEnabled(zapcore.InfoLevel)
+}
+
+// Helper functions to extract values from context
+// These would typically be implemented based on your context structure
+
+func getRequestIDFromContext(ctx context.Context) string {
+	if requestID := ctx.Value("request_id"); requestID != nil {
+		if id, ok := requestID.(string); ok {
+			return id
+		}
+	}
+	return ""
+}
+
+func getUserIDFromContext(ctx context.Context) string {
+	if userID := ctx.Value("user_id"); userID != nil {
+		if id, ok := userID.(string); ok {
+			return id
+		}
+	}
+	return ""
+}
+
+func getTraceIDFromContext(ctx context.Context) string {
+	if traceID := ctx.Value("trace_id"); traceID != nil {
+		if id, ok := traceID.(string); ok {
+			return id
+		}
+	}
+	return ""
+}
+
+// StructuredLogger provides a simple interface for structured logging
+type StructuredLogger interface {
+	Debug(msg string, fields ...zap.Field)
+	Info(msg string, fields ...zap.Field)
+	Warn(msg string, fields ...zap.Field)
+	Error(msg string, fields ...zap.Field)
+	Fatal(msg string, fields ...zap.Field)
+	Panic(msg string, fields ...zap.Field)
+	With(fields ...zap.Field) StructuredLogger
+	WithContext(ctx context.Context) StructuredLogger
+}
+
+// structuredLogger implements StructuredLogger
+type structuredLogger struct {
+	logger *zap.Logger
+}
+
+// NewStructuredLogger creates a new structured logger
+func NewStructuredLogger(logger *zap.Logger) StructuredLogger {
+	return &structuredLogger{logger: logger}
+}
+
+func (l *structuredLogger) Debug(msg string, fields ...zap.Field) {
+	l.logger.Debug(msg, fields...)
+}
+
+func (l *structuredLogger) Info(msg string, fields ...zap.Field) {
+	l.logger.Info(msg, fields...)
+}
+
+func (l *structuredLogger) Warn(msg string, fields ...zap.Field) {
+	l.logger.Warn(msg, fields...)
+}
+
+func (l *structuredLogger) Error(msg string, fields ...zap.Field) {
+	l.logger.Error(msg, fields...)
+}
+
+func (l *structuredLogger) Fatal(msg string, fields ...zap.Field) {
+	l.logger.Fatal(msg, fields...)
+}
+
+func (l *structuredLogger) Panic(msg string, fields ...zap.Field) {
+	l.logger.Panic(msg, fields...)
+}
+
+func (l *structuredLogger) With(fields ...zap.Field) StructuredLogger {
+	return &structuredLogger{logger: l.logger.With(fields...)}
+}
+
+func (l *structuredLogger) WithContext(ctx context.Context) StructuredLogger {
+	logger := l.logger
+
+	// Extract context information
+	if requestID := getRequestIDFromContext(ctx); requestID != "" {
+		logger = logger.With(zap.String("request_id", requestID))
+	}
+
+	if userID := getUserIDFromContext(ctx); userID != "" {
+		logger = logger.With(zap.String("user_id", userID))
+	}
+
+	if traceID := getTraceIDFromContext(ctx); traceID != "" {
+		logger = logger.With(zap.String("trace_id", traceID))
+	}
+
+	return &structuredLogger{logger: logger}
+}

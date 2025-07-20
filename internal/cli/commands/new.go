@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
+	"github.com/shapestone/foundry/internal/layout"
 	"github.com/spf13/cobra"
 )
 
@@ -35,7 +36,14 @@ Use 'foundry init' if you want to initialize in the current directory.`,
 
   # List available layouts
   foundry new --list-layouts`,
-		Args: cobra.ExactArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			// Allow no arguments if --list-layouts flag is set
+			if listLayouts, _ := cmd.Flags().GetBool("list-layouts"); listLayouts {
+				return nil
+			}
+			// Otherwise require exactly 1 argument
+			return cobra.ExactArgs(1)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runNew(cmd, args, adapter)
 		},
@@ -48,7 +56,6 @@ Use 'foundry init' if you want to initialize in the current directory.`,
 	cmd.Flags().StringP("license", "", "MIT", "Project license")
 	cmd.Flags().StringP("description", "d", "", "Project description")
 	cmd.Flags().StringP("github", "g", "", "GitHub username")
-	cmd.Flags().StringP("vars", "", "", "Comma-separated layout variables (key=value)")
 	cmd.Flags().BoolP("force", "f", false, "Overwrite existing directory")
 	cmd.Flags().Bool("no-git", false, "Skip git initialization")
 	cmd.Flags().Bool("list-layouts", false, "List available layouts and exit")
@@ -63,7 +70,7 @@ func runNew(cmd *cobra.Command, args []string, adapter *CLIAdapter) error {
 
 	// Check if listing layouts
 	if listLayouts, _ := cmd.Flags().GetBool("list-layouts"); listLayouts {
-		return listAvailableLayouts(stdout)
+		return listAvailableLayouts(stdout, adapter)
 	}
 
 	projectName := args[0]
@@ -80,7 +87,6 @@ func runNew(cmd *cobra.Command, args []string, adapter *CLIAdapter) error {
 	license, _ := cmd.Flags().GetString("license")
 	description, _ := cmd.Flags().GetString("description")
 	githubUsername, _ := cmd.Flags().GetString("github")
-	varsStr, _ := cmd.Flags().GetString("vars")
 	force, _ := cmd.Flags().GetBool("force")
 	noGit, _ := cmd.Flags().GetBool("no-git")
 
@@ -96,18 +102,6 @@ func runNew(cmd *cobra.Command, args []string, adapter *CLIAdapter) error {
 	// Default description
 	if description == "" {
 		description = fmt.Sprintf("A Go project created with Foundry using the %s layout", layoutName)
-	}
-
-	// Parse custom variables
-	customVars := make(map[string]string)
-	if varsStr != "" {
-		pairs := strings.Split(varsStr, ",")
-		for _, pair := range pairs {
-			parts := strings.SplitN(pair, "=", 2)
-			if len(parts) == 2 {
-				customVars[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
-			}
-		}
 	}
 
 	// Create project directory path
@@ -145,7 +139,7 @@ func runNew(cmd *cobra.Command, args []string, adapter *CLIAdapter) error {
 		GitHubUsername:  githubUsername,
 		GoVersion:       "1.21",
 		Year:            time.Now().Year(),
-		CustomVariables: customVars,
+		CustomVariables: make(map[string]string),
 	}
 
 	// Clear creation message showing new directory location
@@ -166,6 +160,11 @@ func runNew(cmd *cobra.Command, args []string, adapter *CLIAdapter) error {
 			fmt.Fprintf(stderr, "Warning: failed to initialize git repository: %v\n", err)
 		} else {
 			fmt.Fprintln(stdout, "✓ Initialized git repository")
+
+			// Create initial commit in the project directory
+			if err := createInitialCommitInDir(projectPath); err != nil {
+				fmt.Fprintf(stderr, "Warning: failed to create initial commit: %v\n", err)
+			}
 		}
 	}
 
@@ -190,11 +189,53 @@ func runNew(cmd *cobra.Command, args []string, adapter *CLIAdapter) error {
 	return nil
 }
 
-// listAvailableLayouts lists all available layouts
-func listAvailableLayouts(stdout io.Writer) error {
-	// TODO: Integrate with layout manager when available
-	// For now, show basic layouts
+// listAvailableLayouts lists all available layouts using the layout manager
+func listAvailableLayouts(stdout io.Writer, adapter *CLIAdapter) error {
+	// Get layout manager
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+	configPath := filepath.Join(homeDir, ".foundry", "layouts.yaml")
 
+	manager, err := layout.NewManager(configPath)
+	if err != nil {
+		// If layout manager fails, show basic layouts
+		return showBasicLayouts(stdout)
+	}
+
+	// Get layouts from manager
+	layouts := manager.ListLayouts()
+
+	fmt.Fprintln(stdout, "📋 Available layouts:")
+	fmt.Fprintln(stdout)
+
+	if len(layouts) == 0 {
+		return showBasicLayouts(stdout)
+	}
+
+	for _, l := range layouts {
+		fmt.Fprintf(stdout, "  🏗️  %-15s %s\n", l.Name, l.Description)
+		if l.Source.Type != "local" {
+			fmt.Fprintf(stdout, "      Source: %s (%s)\n", l.Source.Type, l.Source.Location)
+		}
+		fmt.Fprintln(stdout)
+	}
+
+	fmt.Fprintln(stdout, "📖 Usage:")
+	fmt.Fprintln(stdout, "  foundry new myproject --layout=<name>     # Create with specific layout")
+	fmt.Fprintln(stdout, "  foundry layout info <name>               # Detailed layout information")
+	fmt.Fprintln(stdout, "  foundry layout list                      # List all layouts with details")
+	fmt.Fprintln(stdout, "")
+	fmt.Fprintln(stdout, "🔄 Command comparison:")
+	fmt.Fprintln(stdout, "  foundry new myproject    # Creates ./myproject/ directory")
+	fmt.Fprintln(stdout, "  foundry init myproject   # Initializes in current directory")
+
+	return nil
+}
+
+// showBasicLayouts shows fallback layout list when layout manager is unavailable
+func showBasicLayouts(stdout io.Writer) error {
 	fmt.Fprintln(stdout, "📋 Available layouts:")
 	fmt.Fprintln(stdout)
 
@@ -205,8 +246,8 @@ func listAvailableLayouts(stdout io.Writer) error {
 	}{
 		{
 			name:        "standard",
-			description: "Standard Go project layout with cmd, internal, and pkg",
-			features:    "Basic structure, Makefile, Docker support",
+			description: "Standard Go project layout with Gorilla Mux router",
+			features:    "HTTP server, middleware, Docker, Makefile",
 		},
 		{
 			name:        "microservice",
@@ -215,7 +256,7 @@ func listAvailableLayouts(stdout io.Writer) error {
 		},
 		{
 			name:        "hexagonal",
-			description: "Hexagonal architecture with domain-driven design",
+			description: "hexagonal architecture with domain-driven design",
 			features:    "Clean architecture, DDD patterns, dependency injection",
 		},
 		{
@@ -235,13 +276,25 @@ func listAvailableLayouts(stdout io.Writer) error {
 	fmt.Fprintln(stdout, "  foundry new myproject --layout=<name>     # Create with specific layout")
 	fmt.Fprintln(stdout, "  foundry layout info <name>               # Detailed layout information")
 	fmt.Fprintln(stdout, "  foundry layout list                      # List all layouts with details")
-	fmt.Fprintln(stdout, "")
-	fmt.Fprintln(stdout, "🔄 Command comparison:")
-	fmt.Fprintln(stdout, "  foundry new myproject    # Creates ./myproject/ directory")
-	fmt.Fprintln(stdout, "  foundry init myproject   # Initializes in current directory")
 
 	return nil
 }
 
-// Helper functions (shared with init command)
-// Note: initGitRepo and isValidProjectName are defined in init.go to avoid duplication
+// createInitialCommitInDir creates the initial git commit in a specific directory
+func createInitialCommitInDir(dir string) error {
+	// Add all files
+	cmd := exec.Command("git", "add", ".")
+	cmd.Dir = dir
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	// Create initial commit
+	cmd = exec.Command("git", "commit", "-m", "Initial commit")
+	cmd.Dir = dir
+	return cmd.Run()
+}
+
+// NOTE: initGitRepo function is defined in init.go - removed duplicate
+// isValidProjectName is also defined in init.go - will use that one
+// generateProject is also defined in init.go - will use that one

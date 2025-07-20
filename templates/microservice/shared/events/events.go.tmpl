@@ -1,0 +1,431 @@
+package events
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
+
+	"{{.ModuleName}}/shared/observability"
+)
+
+// Event represents a domain event in the system
+type Event struct {
+	// Unique identifier for the event
+	ID string `json:"id"`
+
+	// Type of the event (e.g., "user.created", "order.cancelled")
+	Type string `json:"type"`
+
+	// Version of the event schema
+	Version string `json:"version"`
+
+	// Source service that published the event
+	Source string `json:"source"`
+
+	// Subject of the event (entity ID)
+	Subject string `json:"subject"`
+
+	// Timestamp when the event occurred
+	Timestamp time.Time `json:"timestamp"`
+
+	// Event payload data
+	Data interface{} `json:"data"`
+
+	// Additional metadata
+	Metadata map[string]string `json:"metadata"`
+
+	// Trace ID for distributed tracing
+	TraceID string `json:"trace_id"`
+
+	// Span ID for distributed tracing
+	SpanID string `json:"span_id"`
+}
+
+// NewEvent creates a new event with generated ID and timestamp
+func NewEvent(eventType, source, subject string, data interface{}) *Event {
+	ctx := context.Background()
+	span := trace.SpanFromContext(ctx)
+	spanContext := span.SpanContext()
+
+	return &Event{
+		ID:        uuid.New().String(),
+		Type:      eventType,
+		Version:   "1.0",
+		Source:    source,
+		Subject:   subject,
+		Timestamp: time.Now().UTC(),
+		Data:      data,
+		Metadata:  make(map[string]string),
+		TraceID:   spanContext.TraceID().String(),
+		SpanID:    spanContext.SpanID().String(),
+	}
+}
+
+// ToJSON serializes the event to JSON
+func (e *Event) ToJSON() ([]byte, error) {
+	return json.Marshal(e)
+}
+
+// FromJSON deserializes the event from JSON
+func FromJSON(data []byte) (*Event, error) {
+	var event Event
+	if err := json.Unmarshal(data, &event); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal event: %w", err)
+	}
+	return &event, nil
+}
+
+// EventHandler defines the interface for handling events
+type EventHandler interface {
+	// Handle processes an event
+	Handle(ctx context.Context, event *Event) error
+
+	// CanHandle returns true if this handler can process the event type
+	CanHandle(eventType string) bool
+
+	// Name returns the name of the handler
+	Name() string
+}
+
+// EventBus defines the interface for event publishing and subscription
+type EventBus interface {
+	// Publish publishes an event to the bus
+	Publish(ctx context.Context, event *Event) error
+
+	// Subscribe subscribes to events of specific types
+	Subscribe(ctx context.Context, eventTypes []string, handler EventHandler) error
+
+	// Unsubscribe removes a subscription
+	Unsubscribe(ctx context.Context, handler EventHandler) error
+
+	// Close closes the event bus
+	Close() error
+}
+
+// BaseEventHandler provides common functionality for event handlers
+type BaseEventHandler struct {
+	name         string
+	logger       *zap.Logger
+	metrics      *observability.Metrics
+	eventTypes   []string
+	tracer       trace.Tracer
+}
+
+// NewBaseEventHandler creates a new base event handler
+func NewBaseEventHandler(name string, eventTypes []string, logger *zap.Logger, metrics *observability.Metrics) *BaseEventHandler {
+	return &BaseEventHandler{
+		name:       name,
+		logger:     logger,
+		metrics:    metrics,
+		eventTypes: eventTypes,
+		tracer:     otel.Tracer("{{.ProjectName | lower}}/events"),
+	}
+}
+
+// Name returns the handler name
+func (h *BaseEventHandler) Name() string {
+	return h.name
+}
+
+// CanHandle checks if the handler can process the event type
+func (h *BaseEventHandler) CanHandle(eventType string) bool {
+	for _, et := range h.eventTypes {
+		if et == eventType {
+			return true
+		}
+	}
+	return false
+}
+
+// LogEvent logs an event with structured fields
+func (h *BaseEventHandler) LogEvent(ctx context.Context, event *Event, message string, fields ...zap.Field) {
+	defaultFields := []zap.Field{
+		zap.String("event_id", event.ID),
+		zap.String("event_type", event.Type),
+		zap.String("event_source", event.Source),
+		zap.String("event_subject", event.Subject),
+		zap.Time("event_timestamp", event.Timestamp),
+		zap.String("trace_id", event.TraceID),
+		zap.String("span_id", event.SpanID),
+	}
+
+	allFields := append(defaultFields, fields...)
+	h.logger.Info(message, allFields...)
+}
+
+// RecordMetrics records metrics for event processing
+func (h *BaseEventHandler) RecordMetrics(event *Event, duration time.Duration, success bool) {
+	if h.metrics == nil {
+		return
+	}
+
+	status := "success"
+	if !success {
+		status = "error"
+	}
+
+	// Record processing duration
+	h.metrics.RecordHistogram(
+		"event_processing_duration_seconds",
+		duration.Seconds(),
+		map[string]string{
+			"event_type": event.Type,
+			"handler":    h.name,
+			"status":     status,
+		},
+	)
+
+	// Record event count
+	h.metrics.IncrementCounter(
+		"events_processed_total",
+		map[string]string{
+			"event_type": event.Type,
+			"handler":    h.name,
+			"status":     status,
+		},
+	)
+}
+
+// StartSpan starts a new tracing span for event processing
+func (h *BaseEventHandler) StartSpan(ctx context.Context, event *Event) (context.Context, trace.Span) {
+	spanName := fmt.Sprintf("event.handle.%s", event.Type)
+
+	ctx, span := h.tracer.Start(ctx, spanName,
+		trace.WithAttributes(
+			attribute.String("event.id", event.ID),
+			attribute.String("event.type", event.Type),
+			attribute.String("event.source", event.Source),
+			attribute.String("event.subject", event.Subject),
+			attribute.String("handler.name", h.name),
+		),
+	)
+
+	return ctx, span
+}
+
+// EventRegistry manages event handlers
+type EventRegistry struct {
+	handlers map[string][]EventHandler
+	logger   *zap.Logger
+	metrics  *observability.Metrics
+}
+
+// NewEventRegistry creates a new event registry
+func NewEventRegistry(logger *zap.Logger, metrics *observability.Metrics) *EventRegistry {
+	return &EventRegistry{
+		handlers: make(map[string][]EventHandler),
+		logger:   logger,
+		metrics:  metrics,
+	}
+}
+
+// Register registers an event handler for specific event types
+func (r *EventRegistry) Register(eventTypes []string, handler EventHandler) {
+	for _, eventType := range eventTypes {
+		r.handlers[eventType] = append(r.handlers[eventType], handler)
+	}
+
+	r.logger.Info("Registered event handler",
+		zap.String("handler", handler.Name()),
+		zap.Strings("event_types", eventTypes),
+	)
+}
+
+// GetHandlers returns all handlers for an event type
+func (r *EventRegistry) GetHandlers(eventType string) []EventHandler {
+	return r.handlers[eventType]
+}
+
+// ProcessEvent processes an event through all registered handlers
+func (r *EventRegistry) ProcessEvent(ctx context.Context, event *Event) error {
+	handlers := r.GetHandlers(event.Type)
+	if len(handlers) == 0 {
+		r.logger.Warn("No handlers found for event type",
+			zap.String("event_type", event.Type),
+			zap.String("event_id", event.ID),
+		)
+		return nil
+	}
+
+	var errors []error
+
+	for _, handler := range handlers {
+		if !handler.CanHandle(event.Type) {
+			continue
+		}
+
+		start := time.Now()
+		err := handler.Handle(ctx, event)
+		duration := time.Since(start)
+
+		if err != nil {
+			errors = append(errors, fmt.Errorf("handler %s failed: %w", handler.Name(), err))
+
+			r.logger.Error("Event handler failed",
+				zap.String("handler", handler.Name()),
+				zap.String("event_type", event.Type),
+				zap.String("event_id", event.ID),
+				zap.Error(err),
+				zap.Duration("duration", duration),
+			)
+		} else {
+			r.logger.Debug("Event handler succeeded",
+				zap.String("handler", handler.Name()),
+				zap.String("event_type", event.Type),
+				zap.String("event_id", event.ID),
+				zap.Duration("duration", duration),
+			)
+		}
+
+		// Record metrics if available
+		if r.metrics != nil {
+			success := err == nil
+			r.recordHandlerMetrics(event, handler, duration, success)
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("event processing failed with %d errors: %v", len(errors), errors)
+	}
+
+	return nil
+}
+
+// recordHandlerMetrics records metrics for handler execution
+func (r *EventRegistry) recordHandlerMetrics(event *Event, handler EventHandler, duration time.Duration, success bool) {
+	status := "success"
+	if !success {
+		status = "error"
+	}
+
+	r.metrics.RecordHistogram(
+		"event_handler_duration_seconds",
+		duration.Seconds(),
+		map[string]string{
+			"event_type": event.Type,
+			"handler":    handler.Name(),
+			"status":     status,
+		},
+	)
+
+	r.metrics.IncrementCounter(
+		"event_handlers_executed_total",
+		map[string]string{
+			"event_type": event.Type,
+			"handler":    handler.Name(),
+			"status":     status,
+		},
+	)
+}
+
+// Common event types for {{.ProjectName}}
+const (
+	// {{.CustomVariables.service_name | title}} Service Events
+	{{.CustomVariables.service_name | title}}Created = "{{.CustomVariables.service_name | snake_case}}.created"
+	{{.CustomVariables.service_name | title}}Updated = "{{.CustomVariables.service_name | snake_case}}.updated"
+	{{.CustomVariables.service_name | title}}Deleted = "{{.CustomVariables.service_name | snake_case}}.deleted"
+	{{.CustomVariables.service_name | title}}Activated = "{{.CustomVariables.service_name | snake_case}}.activated"
+	{{.CustomVariables.service_name | title}}Deactivated = "{{.CustomVariables.service_name | snake_case}}.deactivated"
+
+	// System Events
+	ServiceStarted = "system.service_started"
+	ServiceStopped = "system.service_stopped"
+	HealthCheckFailed = "system.health_check_failed"
+
+	// Authentication Events
+	UserLoggedIn = "auth.user_logged_in"
+	UserLoggedOut = "auth.user_logged_out"
+	UserLoginFailed = "auth.user_login_failed"
+
+	// Error Events
+	ValidationFailed = "error.validation_failed"
+	DatabaseError = "error.database_error"
+	ExternalServiceError = "error.external_service_error"
+)
+
+// Event data structures for common events
+
+// {{.CustomVariables.service_name | title}}CreatedData represents data for {{.CustomVariables.service_name | snake_case}} creation events
+type {{.CustomVariables.service_name | title}}CreatedData struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// {{.CustomVariables.service_name | title}}UpdatedData represents data for {{.CustomVariables.service_name | snake_case}} update events
+type {{.CustomVariables.service_name | title}}UpdatedData struct {
+	ID   string            `json:"id"`
+	Changes map[string]interface{} `json:"changes"`
+}
+
+// {{.CustomVariables.service_name | title}}DeletedData represents data for {{.CustomVariables.service_name | snake_case}} deletion events
+type {{.CustomVariables.service_name | title}}DeletedData struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ServiceStartedData represents data for service startup events
+type ServiceStartedData struct {
+	ServiceName string    `json:"service_name"`
+	Version     string    `json:"version"`
+	StartTime   time.Time `json:"start_time"`
+}
+
+// ErrorEventData represents data for error events
+type ErrorEventData struct {
+	ErrorType    string `json:"error_type"`
+	ErrorMessage string `json:"error_message"`
+	Component    string `json:"component"`
+	Details      map[string]interface{} `json:"details"`
+}
+
+// Helper functions for creating common events
+
+// NewUserCreatedEvent creates a new {{.CustomVariables.service_name | snake_case}} creation event
+func New{{.CustomVariables.service_name | title}}CreatedEvent(id, name string) *Event {
+	return NewEvent({{.CustomVariables.service_name | title}}Created, "{{.CustomVariables.service_name | snake_case}}-service", id, {{.CustomVariables.service_name | title}}CreatedData{
+		ID:   id,
+		Name: name,
+	})
+}
+
+// New{{.CustomVariables.service_name | title}}UpdatedEvent creates a new {{.CustomVariables.service_name | snake_case}} update event
+func New{{.CustomVariables.service_name | title}}UpdatedEvent(id string, changes map[string]interface{}) *Event {
+	return NewEvent({{.CustomVariables.service_name | title}}Updated, "{{.CustomVariables.service_name | snake_case}}-service", id, {{.CustomVariables.service_name | title}}UpdatedData{
+		ID:      id,
+		Changes: changes,
+	})
+}
+
+// New{{.CustomVariables.service_name | title}}DeletedEvent creates a new {{.CustomVariables.service_name | snake_case}} deletion event
+func New{{.CustomVariables.service_name | title}}DeletedEvent(id, name string) *Event {
+	return NewEvent({{.CustomVariables.service_name | title}}Deleted, "{{.CustomVariables.service_name | snake_case}}-service", id, {{.CustomVariables.service_name | title}}DeletedData{
+		ID:   id,
+		Name: name,
+	})
+}
+
+// NewServiceStartedEvent creates a new service startup event
+func NewServiceStartedEvent(serviceName, version string) *Event {
+	return NewEvent(ServiceStarted, serviceName, serviceName, ServiceStartedData{
+		ServiceName: serviceName,
+		Version:     version,
+		StartTime:   time.Now().UTC(),
+	})
+}
+
+// NewErrorEvent creates a new error event
+func NewErrorEvent(errorType, message, component string, details map[string]interface{}) *Event {
+	return NewEvent("error."+errorType, component, component, ErrorEventData{
+		ErrorType:    errorType,
+		ErrorMessage: message,
+		Component:    component,
+		Details:      details,
+	})
+}

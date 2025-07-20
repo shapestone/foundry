@@ -1,0 +1,127 @@
+# Foundry project configuration
+layout: web
+version: 1.0.0
+
+project:
+  name: {{.ProjectName}}
+  module: {{.ModuleName}}
+  description: {{.Description}}
+  author: {{.Author}}
+  license: {{.License}}
+  type: web
+
+# Component generation settings
+components:
+  page_handler:
+    target_dir: internal/handlers
+    naming: snake_case
+    template_type: web_page
+  api_handler:
+    target_dir: internal/handlers
+    naming: snake_case
+    template_type: web_api
+  model:
+    target_dir: internal/models
+    naming: pascal_case
+  middleware:
+    target_dir: internal/middleware
+    naming: snake_case
+    web_specific: true
+  service:
+    target_dir: internal/services
+    naming: snake_case
+
+# Web-specific settings
+web:
+  template_engine: html/template
+  template_dir: templates
+  static_dir: static
+  session_store: cookie
+  csrf_protection: true
+
+  # Asset settings
+  assets:
+    css_dir: static/css
+    js_dir: static/js
+    images_dir: static/images
+    minify: false
+    versioning: false
+
+  # Security settings
+  security:
+    csrf_key_length: 32
+    session_max_age: 604800  # 7 days
+    secure_cookies: false    # Set to true in production
+    http_only_cookies: true
+    same_site: lax
+
+# Build settings
+build:
+  binary_name: {{.ProjectName}}
+  main_package: .
+  include_assets: true
+
+# Development settings
+development:
+  port: {{if .CustomVariables.http_port}}{{.CustomVariables.http_port}}{{else}}8080{{end}}
+  hot_reload: true
+  template_auto_reload: true
+  debug_mode: true
+  watch_paths:
+    - "*.go"
+    - "templates/*.html"
+    - "static/css/*.css"
+    - "static/js/*.js"
+
+# Docker settings
+docker:
+  image_name: {{.ProjectName}}
+  base_image: golang:1.21-alpine
+  include_static: true
+  include_templates: true
+
+# Testing settings
+testing:
+  coverage_threshold: 80
+  test_timeout: 5m
+  integration_tests: true
+
+# Deployment settings
+deployment:
+  type: web
+  static_hosting: false
+  cdn_enabled: false
+
+# Routes configuration (for documentation)
+routes:
+  web_pages:
+    - path: "/"
+      handler: "homeHandler"
+      methods: ["GET"]
+      description: "Home page"
+    - path: "/about"
+      handler: "aboutHandler"
+      methods: ["GET"]
+      description: "About page"
+    - path: "/contact"
+      handler: "contactHandler"
+      methods: ["GET", "POST"]
+      description: "Contact form"
+
+  api_endpoints:
+    - path: "/api/v1/health"
+      handler: "healthHandler"
+      methods: ["GET"]
+      description: "Health check"
+    - path: "/api/v1/example"
+      handler: "exampleAPIHandler"
+      methods: ["GET"]
+      description: "Example API endpoint"
+
+# Dependencies tracking
+dependencies:
+  web_framework: gorilla/mux
+  template_engine: html/template
+  session_management: gorilla/sessions
+  csrf_protection: gorilla/csrf
+  environment: joho/godotenv

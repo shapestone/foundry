@@ -1,0 +1,198 @@
+package secondary
+
+import (
+	"context"
+	"sync"
+
+	"{{if .github_username}}github.com/{{.github_username}}/{{end}}{{.project_name}}/internal/core/domain"
+	"{{if .github_username}}github.com/{{.github_username}}/{{end}}{{.project_name}}/internal/core/ports"
+)
+
+// inMemoryUserRepository implements UserRepository interface using in-memory storage
+type inMemoryUserRepository struct {
+	users map[string]*domain.User
+	mu    sync.RWMutex
+}
+
+// NewInMemoryUserRepository creates a new in-memory user repository
+func NewInMemoryUserRepository() ports.UserRepository {
+	return &inMemoryUserRepository{
+		users: make(map[string]*domain.User),
+	}
+}
+
+// Create stores a new user
+func (r *inMemoryUserRepository) Create(ctx context.Context, user *domain.User) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Check if user already exists
+	if _, exists := r.users[user.ID]; exists {
+		return domain.ErrUserExists
+	}
+
+	// Check if email is already taken
+	for _, existingUser := range r.users {
+		if existingUser.Email == user.Email {
+			return domain.ErrUserExists
+		}
+	}
+
+	// Store the user (create a copy to avoid external modifications)
+	userCopy := *user
+	r.users[user.ID] = &userCopy
+
+	return nil
+}
+
+// GetByID retrieves a user by their ID
+func (r *inMemoryUserRepository) GetByID(ctx context.Context, id string) (*domain.User, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	user, exists := r.users[id]
+	if !exists {
+		return nil, domain.ErrUserNotFound
+	}
+
+	// Return a copy to avoid external modifications
+	userCopy := *user
+	return &userCopy, nil
+}
+
+// GetByEmail retrieves a user by their email
+func (r *inMemoryUserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, user := range r.users {
+		if user.Email == email {
+			// Return a copy to avoid external modifications
+			userCopy := *user
+			return &userCopy, nil
+		}
+	}
+
+	return nil, domain.ErrUserNotFound
+}
+
+// Update modifies an existing user
+func (r *inMemoryUserRepository) Update(ctx context.Context, user *domain.User) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Check if user exists
+	if _, exists := r.users[user.ID]; !exists {
+		return domain.ErrUserNotFound
+	}
+
+	// Check if email is taken by another user
+	for id, existingUser := range r.users {
+		if id != user.ID && existingUser.Email == user.Email {
+			return domain.ErrUserExists
+		}
+	}
+
+	// Update the user (store a copy)
+	userCopy := *user
+	r.users[user.ID] = &userCopy
+
+	return nil
+}
+
+// Delete removes a user by their ID
+func (r *inMemoryUserRepository) Delete(ctx context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, exists := r.users[id]; !exists {
+		return domain.ErrUserNotFound
+	}
+
+	delete(r.users, id)
+	return nil
+}
+
+// List retrieves users with pagination
+func (r *inMemoryUserRepository) List(ctx context.Context, limit, offset int) ([]*domain.User, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// Convert map to slice
+	users := make([]*domain.User, 0, len(r.users))
+	for _, user := range r.users {
+		userCopy := *user
+		users = append(users, &userCopy)
+	}
+
+	// Apply pagination
+	if offset >= len(users) {
+		return []*domain.User{}, nil
+	}
+
+	end := offset + limit
+	if end > len(users) {
+		end = len(users)
+	}
+
+	return users[offset:end], nil
+}
+
+// Exists checks if a user exists by ID
+func (r *inMemoryUserRepository) Exists(ctx context.Context, id string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	_, exists := r.users[id]
+	return exists, nil
+}
+
+// PostgreSQLUserRepository implements UserRepository interface using PostgreSQL
+// This is an example of how you would implement a real database adapter
+type PostgreSQLUserRepository struct {
+	// db *sql.DB or *sqlx.DB or GORM instance
+	// connectionString string
+}
+
+// NewPostgreSQLUserRepository creates a new PostgreSQL user repository
+func NewPostgreSQLUserRepository(/* db connection */) ports.UserRepository {
+	return &PostgreSQLUserRepository{
+		// Initialize database connection
+	}
+}
+
+// Implement all UserRepository methods for PostgreSQL
+func (r *PostgreSQLUserRepository) Create(ctx context.Context, user *domain.User) error {
+	// TODO: Implement SQL INSERT
+	panic("not implemented")
+}
+
+func (r *PostgreSQLUserRepository) GetByID(ctx context.Context, id string) (*domain.User, error) {
+	// TODO: Implement SQL SELECT by ID
+	panic("not implemented")
+}
+
+func (r *PostgreSQLUserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
+	// TODO: Implement SQL SELECT by email
+	panic("not implemented")
+}
+
+func (r *PostgreSQLUserRepository) Update(ctx context.Context, user *domain.User) error {
+	// TODO: Implement SQL UPDATE
+	panic("not implemented")
+}
+
+func (r *PostgreSQLUserRepository) Delete(ctx context.Context, id string) error {
+	// TODO: Implement SQL DELETE
+	panic("not implemented")
+}
+
+func (r *PostgreSQLUserRepository) List(ctx context.Context, limit, offset int) ([]*domain.User, error) {
+	// TODO: Implement SQL SELECT with LIMIT and OFFSET
+	panic("not implemented")
+}
+
+func (r *PostgreSQLUserRepository) Exists(ctx context.Context, id string) (bool, error) {
+	// TODO: Implement SQL EXISTS check
+	panic("not implemented")
+}

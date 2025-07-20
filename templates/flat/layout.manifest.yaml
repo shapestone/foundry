@@ -1,0 +1,38 @@
+name: "flat"
+version: "1.0.0"
+author: "Foundry Team"
+description: "Single-package Go project with organized files - perfect for small to medium applications"
+min_foundry_version: "0.5.0"
+
+structure:
+  directories: []
+  files:
+    - template: "project/main.go.tmpl"
+      target: "main.go"
+    - template: "project/handlers.go.tmpl"
+      target: "handlers.go"
+    - template: "project/models.go.tmpl"
+      target: "models.go"
+    - template: "project/database.go.tmpl"
+      target: "database.go"
+    - template: "project/config.go.tmpl"
+      target: "config.go"
+    - template: "project/go.mod.tmpl"
+      target: "go.mod"
+    - template: "project/README.md.tmpl"
+      target: "README.md"
+
+dependencies:
+  - "github.com/gorilla/mux"
+
+features:
+  - "single-package-structure"
+  - "organized-files"
+  - "http-server"
+  - "database-ready"
+  - "configuration-management"
+  - "production-ready"
+
+variables: []
+
+components: {}

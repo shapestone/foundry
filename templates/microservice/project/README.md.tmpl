@@ -1,0 +1,300 @@
+# {{.ProjectName}}
+
+{{.Description}}
+
+A microservice architecture built with Go, featuring gRPC APIs, event-driven communication, Kubernetes deployment, and comprehensive observability.
+
+## Architecture Overview
+
+This project implements a distributed microservice architecture with the following key components:
+
+- **gRPC Services**: High-performance inter-service communication
+- **Event-Driven Architecture**: Asynchronous messaging with {{.CustomVariables.message_broker | default "NATS"}}
+- **Kubernetes Native**: Container orchestration with Helm charts
+- **Service Mesh Ready**: Compatible with {{.CustomVariables.service_mesh | default "Istio"}}
+- **Observability**: Distributed tracing, metrics, and structured logging
+- **Circuit Breakers**: Fault tolerance and resilience patterns
+
+## Services
+
+### {{.CustomVariables.service_name | title}}Service
+Primary service implementing core business logic.
+
+- **gRPC Port**: {{.CustomVariables.grpc_port | default "9090"}}
+- **HTTP Gateway Port**: {{.CustomVariables.http_port | default "8080"}}
+- **Metrics Port**: {{.CustomVariables.metrics_port | default "2112"}}
+
+## Quick Start
+
+### Prerequisites
+
+- Go 1.22+
+- Docker & Docker Compose
+- kubectl (for Kubernetes deployment)
+- Helm 3+ (for chart deployment)
+- Protocol Buffers compiler (protoc)
+- Buf CLI (recommended for proto management)
+
+### Local Development
+
+1. **Clone and setup**:
+```bash
+git clone <repository-url>
+cd {{.ProjectName}}
+make deps
+```
+
+2. **Generate Protocol Buffers**:
+```bash
+make proto-gen
+```
+
+3. **Start infrastructure services**:
+```bash
+docker-compose up -d postgres redis {{.CustomVariables.message_broker | default "nats"}}
+```
+
+4. **Run database migrations**:
+```bash
+make migrate-up
+```
+
+5. **Start the service**:
+```bash
+make run
+```
+
+### Docker Development
+
+```bash
+# Build all services
+make docker-build
+
+# Start full stack
+docker-compose up
+
+# View logs
+docker-compose logs -f {{.CustomVariables.service_name | default "user"}}-service
+```
+
+## API Documentation
+
+### gRPC APIs
+
+The service exposes gRPC APIs defined in `api/proto/{{.CustomVariables.service_name | default "user"}}.proto`.
+
+To explore the API:
+```bash
+# List services
+grpcurl -plaintext localhost:{{.CustomVariables.grpc_port | default "9090"}} list
+
+# Get service methods
+grpcurl -plaintext localhost:{{.CustomVariables.grpc_port | default "9090"}} list {{.ProjectName}}.{{.CustomVariables.service_name | title}}Service
+
+# Call a method
+grpcurl -plaintext -d '{"id": "123"}' localhost:{{.CustomVariables.grpc_port | default "9090"}} {{.ProjectName}}.{{.CustomVariables.service_name | title}}Service/Get{{.CustomVariables.service_name | title}}
+```
+
+### HTTP Gateway
+
+gRPC-Gateway provides REST endpoints:
+
+- Health: `GET /health`
+- Metrics: `GET /metrics`
+- API: `GET /api/v1/...` (auto-generated from gRPC)
+
+## Development Workflow
+
+### Code Generation
+
+```bash
+# Generate protobuf code
+make proto-gen
+
+# Generate mocks for testing
+make mocks
+
+# Generate OpenAPI documentation
+make docs
+```
+
+### Testing
+
+```bash
+# Run unit tests
+make test
+
+# Run integration tests
+make test-integration
+
+# Run tests with coverage
+make test-coverage
+
+# Run tests with race detection
+make test-race
+```
+
+### Database Operations
+
+```bash
+# Create migration
+make migrate-create NAME=add_users_table
+
+# Apply migrations
+make migrate-up
+
+# Rollback migrations
+make migrate-down
+
+# Reset database
+make migrate-reset
+```
+
+## Deployment
+
+### Kubernetes
+
+1. **Build and push images**:
+```bash
+make docker-build
+make docker-push
+```
+
+2. **Deploy with kubectl**:
+```bash
+kubectl apply -f deployments/kubernetes/
+```
+
+3. **Deploy with Helm**:
+```bash
+helm install {{.ProjectName}} ./deployments/helm \
+  --set image.tag=latest \
+  --set config.database.host=postgres.default.svc.cluster.local
+```
+
+### Configuration
+
+Environment variables and their defaults:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GRPC_PORT` | {{.CustomVariables.grpc_port | default "9090"}} | gRPC server port |
+| `HTTP_PORT` | {{.CustomVariables.http_port | default "8080"}} | HTTP gateway port |
+| `METRICS_PORT` | {{.CustomVariables.metrics_port | default "2112"}} | Prometheus metrics port |
+| `DATABASE_URL` | `postgres://...` | Database connection string |
+| `{{.CustomVariables.message_broker | upper | default "NATS"}}_URL` | `{{.CustomVariables.message_broker | default "nats"}}://localhost:4222` | Message broker URL |
+| `JAEGER_ENDPOINT` | `http://localhost:14268/api/traces` | Jaeger tracing endpoint |
+| `LOG_LEVEL` | `info` | Logging level |
+
+## Monitoring
+
+### Metrics
+
+Prometheus metrics are exposed on port {{.CustomVariables.metrics_port | default "2112"}}:
+
+- Request duration histograms
+- Request rate counters
+- Error rate counters
+- Custom business metrics
+
+### Tracing
+
+Distributed tracing with OpenTelemetry:
+
+- Jaeger integration
+- gRPC request tracing
+- Database query tracing
+- Message publishing/consuming tracing
+
+### Logging
+
+Structured logging with Zap:
+
+- JSON format for production
+- Correlation IDs for request tracking
+- Error stack traces
+- Performance logging
+
+## Project Structure
+
+```
+{{.ProjectName}}/
+├── api/proto/                 # Protocol buffer definitions
+├── services/{{.CustomVariables.service_name | default "user"}}/           # Main service
+│   ├── internal/handlers/     # gRPC and HTTP handlers
+│   ├── internal/models/       # Data models
+│   ├── internal/repository/   # Data access layer
+│   ├── internal/services/     # Business logic
+│   └── main.go               # Service entry point
+├── shared/                   # Shared components
+│   ├── config/              # Configuration
+│   ├── events/              # Event definitions
+│   ├── middleware/          # Common middleware
+│   └── observability/       # Logging, metrics, tracing
+├── deployments/             # Deployment configurations
+│   ├── kubernetes/          # K8s manifests
+│   ├── helm/               # Helm charts
+│   └── docker/             # Docker configurations
+├── tools/                   # Operational tools
+│   ├── migrations/         # Database migrations
+│   └── scripts/           # Utility scripts
+└── docs/                   # Documentation
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make your changes
+4. Add tests for your changes
+5. Run the full test suite: `make test-all`
+6. Generate updated documentation: `make docs`
+7. Commit your changes: `git commit -m 'Add amazing feature'`
+8. Push to the branch: `git push origin feature/amazing-feature`
+9. Open a Pull Request
+
+### Code Standards
+
+- Follow Go conventions and best practices
+- Maintain >80% test coverage
+- Update documentation for API changes
+- Use conventional commit messages
+- Run `make lint` before committing
+
+## Troubleshooting
+
+### Common Issues
+
+**gRPC connection refused**:
+```bash
+# Check if service is running
+kubectl get pods -l app={{.CustomVariables.service_name | default "user"}}-service
+
+# Check service logs
+kubectl logs -l app={{.CustomVariables.service_name | default "user"}}-service
+```
+
+**Database connection issues**:
+```bash
+# Verify database connectivity
+kubectl exec -it deployment/{{.CustomVariables.service_name | default "user"}}-service -- \
+  nc -zv postgres.default.svc.cluster.local 5432
+```
+
+**Message broker connectivity**:
+```bash
+# Check NATS connection
+kubectl logs -l app={{.CustomVariables.message_broker | default "nats"}}
+```
+
+## License
+
+{{.License}}
+
+## Support
+
+For questions and support:
+
+- 📧 Email: team@{{.ProjectName}}.com
+- 💬 Slack: #{{.ProjectName}}-support
+- 📋 Issues: [GitHub Issues](https://github.com/{{.GitHubUsername}}/{{.ProjectName}}/issues)

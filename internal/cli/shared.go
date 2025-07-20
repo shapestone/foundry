@@ -1,143 +1,107 @@
+// File: internal/cli/shared.go
+// FIXED: Changed package from 'generators' to 'cli'
+
 package cli
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/shapestone/foundry/internal/layout"
 )
 
-// Shared utility functions used across multiple commands
+// writeFile writes content to a file
+func writeFile(path, content string) error {
+	// Ensure directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
 
-// createLayoutManager creates a layout manager instance
-func (c *CLI) createLayoutManager() (*layout.Manager, error) {
-	// Determine config path
-	homeDir, err := os.UserHomeDir()
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+// getCurrentModule gets the current module name from go.mod
+func getCurrentModule() string {
+	data, err := os.ReadFile("go.mod")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
+		return "myapp"
 	}
 
-	configPath := filepath.Join(homeDir, ".foundry", "layouts.yaml")
-	return layout.NewManager(configPath)
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module"))
+		}
+	}
+	return "myapp"
 }
 
-// Project and component name validation
-
-// isValidProjectName checks if a project name is valid
-func isValidProjectName(name string) bool {
-	if name == "" {
-		return false
+// getProjectName gets the current project name
+func getProjectName() string {
+	if cwd, err := os.Getwd(); err == nil {
+		return filepath.Base(cwd)
 	}
+	return "myapp"
+}
 
-	for _, r := range name {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == '-' || r == '_') {
-			return false
+// detectProjectLayout detects the current project layout from foundry.yaml
+func detectProjectLayout() (string, error) {
+	// Check for foundry.yaml
+	if data, err := os.ReadFile("foundry.yaml"); err == nil {
+		// Simple parsing - look for "layout: layoutname"
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "layout:") {
+				parts := strings.Split(line, ":")
+				if len(parts) >= 2 {
+					return strings.TrimSpace(parts[1]), nil
+				}
+			}
 		}
 	}
 
-	// Can't start with a number
-	if name[0] >= '0' && name[0] <= '9' {
-		return false
-	}
-
-	return true
-}
-
-// validateComponentName validates component names
-func validateComponentName(name string) error {
-	if name == "" {
-		return fmt.Errorf("component name cannot be empty")
-	}
-
-	if !isValidComponentName(name) {
-		return fmt.Errorf("invalid characters (use only letters, numbers, hyphens, and underscores)")
-	}
-
-	return nil
-}
-
-// isValidComponentName checks if a component name is valid
-func isValidComponentName(name string) bool {
-	if name == "" {
-		return false
-	}
-
-	for _, r := range name {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == '-' || r == '_') {
-			return false
+	// Check for .foundry.yaml
+	if data, err := os.ReadFile(".foundry.yaml"); err == nil {
+		// Simple parsing - look for "layout: layoutname"
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "layout:") {
+				parts := strings.Split(line, ":")
+				if len(parts) >= 2 {
+					return strings.TrimSpace(parts[1]), nil
+				}
+			}
 		}
 	}
 
-	// Can't start with a number
-	if name[0] >= '0' && name[0] <= '9' {
-		return false
-	}
-
-	return true
+	// Default to standard layout
+	return "standard", nil
 }
 
-// File system utilities
-
-// isDirEmpty checks if a directory is empty (ignoring .git and .DS_Store)
-func isDirEmpty(dir string) (bool, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false, err
-	}
-
-	for _, entry := range entries {
-		// Ignore .git directory
-		if entry.Name() == ".git" {
-			continue
+// toSnakeCase converts to snake_case
+func toSnakeCase(s string) string {
+	var result []rune
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' && i > 0 {
+			// Add underscore before uppercase letters (except first)
+			if i > 0 && s[i-1] >= 'a' && s[i-1] <= 'z' {
+				result = append(result, '_')
+			}
 		}
-		// Ignore .DS_Store on macOS
-		if entry.Name() == ".DS_Store" {
-			continue
-		}
-		return false, nil
+		result = append(result, toLowerRune(r))
 	}
-
-	return true, nil
+	return string(result)
 }
 
-// isGitRepo checks if a directory is a git repository
-func isGitRepo(dir string) bool {
-	gitDir := filepath.Join(dir, ".git")
-	info, err := os.Stat(gitDir)
-	return err == nil && info.IsDir()
+// toLowerRune converts rune to lowercase
+func toLowerRune(r rune) rune {
+	if r >= 'A' && r <= 'Z' {
+		return r + ('a' - 'A')
+	}
+	return r
 }
-
-// Git operations
-
-// initGitRepo initializes a git repository
-func initGitRepo(projectPath string) error {
-	// Simple git init implementation
-	// In a real implementation, this would use go-git or exec git commands
-	gitDir := filepath.Join(projectPath, ".git")
-	return os.MkdirAll(gitDir, 0755)
-}
-
-// createInitialCommit creates an initial git commit
-func createInitialCommit() error {
-	// In a real implementation, this would use go-git or exec git commands
-	// For now, just return nil
-	return nil
-}
-
-// Project configuration
-
-// saveProjectConfig saves project configuration
-func saveProjectConfig(layoutName string) error {
-	// Save the layout name in foundry.yaml so we know which layout was used
-	// This is already done by the layout system if foundry.yaml.tmpl exists
-	return nil
-}
-
-// String manipulation utilities
 
 // toTitle converts string to title case
 func toTitle(s string) string {
@@ -149,4 +113,12 @@ func toTitle(s string) string {
 	first := strings.ToUpper(string(s[0]))
 	rest := strings.ToLower(s[1:])
 	return first + rest
+}
+
+// capitalize capitalizes the first letter of a string
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + strings.ToLower(s[1:])
 }

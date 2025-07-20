@@ -1,0 +1,134 @@
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+// User represents a user in the system
+type User struct {
+	ID        int       `json:"id" db:"id"`
+	Name      string    `json:"name" db:"name"`
+	Email     string    `json:"email" db:"email"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// UserRequest represents a user creation/update request
+type UserRequest struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+// Validate validates user data
+func (u *User) Validate() error {
+	if u.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if u.Email == "" {
+		return fmt.Errorf("email is required")
+	}
+	// Add more validation as needed
+	return nil
+}
+
+// ToJSON converts user to JSON map
+func (u *User) ToJSON() map[string]interface{} {
+	return map[string]interface{}{
+		"id":         u.ID,
+		"name":       u.Name,
+		"email":      u.Email,
+		"created_at": u.CreatedAt,
+		"updated_at": u.UpdatedAt,
+	}
+}
+
+// UserService defines business logic interface
+type UserService interface {
+	GetAllUsers() ([]User, error)
+	GetUserByID(id int) (*User, error)
+	CreateUser(user User) (*User, error)
+	UpdateUser(user User) (*User, error)
+	DeleteUser(id int) error
+}
+
+// Example implementation with in-memory storage
+// In production, this would connect to a real database
+
+var users = []User{
+	{
+		ID:        1,
+		Name:      "John Doe",
+		Email:     "john@example.com",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	},
+	{
+		ID:        2,
+		Name:      "Jane Smith",
+		Email:     "jane@example.com",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	},
+}
+
+var nextID = 3
+
+// GetAllUsers returns all users
+func GetAllUsers() ([]User, error) {
+	return users, nil
+}
+
+// GetUserByID returns a user by ID
+func GetUserByID(id int) (*User, error) {
+	for _, user := range users {
+		if user.ID == id {
+			return &user, nil
+		}
+	}
+	return nil, fmt.Errorf("user not found")
+}
+
+// CreateUser creates a new user
+func CreateUser(user User) (*User, error) {
+	user.ID = nextID
+	nextID++
+	user.CreatedAt = time.Now()
+	user.UpdatedAt = time.Now()
+
+	if err := user.Validate(); err != nil {
+		return nil, err
+	}
+
+	users = append(users, user)
+	return &user, nil
+}
+
+// UpdateUser updates an existing user
+func UpdateUser(user User) (*User, error) {
+	for i, existingUser := range users {
+		if existingUser.ID == user.ID {
+			user.CreatedAt = existingUser.CreatedAt
+			user.UpdatedAt = time.Now()
+
+			if err := user.Validate(); err != nil {
+				return nil, err
+			}
+
+			users[i] = user
+			return &user, nil
+		}
+	}
+	return nil, fmt.Errorf("user not found")
+}
+
+// DeleteUser deletes a user by ID
+func DeleteUser(id int) error {
+	for i, user := range users {
+		if user.ID == id {
+			users = append(users[:i], users[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("user not found")
+}

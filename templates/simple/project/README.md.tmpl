@@ -1,0 +1,123 @@
+# {{.ProjectName}}
+
+{{.Description}}
+
+{{- if .Author}}
+
+**Author:** {{.Author}}
+{{- end}}
+{{- if .Year}}
+**Year:** {{.Year}}
+{{- end}}
+
+## About
+
+This is a single package Go project where all code lives in `main.go`. This approach is perfect for:
+
+- 🚀 **Quick prototypes** - Get started immediately
+- 📚 **Learning Go** - Everything in one place
+- 🔧 **Simple tools** - CLI utilities and scripts
+- 🌐 **Basic APIs** - Simple web services
+- 💡 **Code demos** - Easy to understand and share
+
+## Getting Started
+
+### Prerequisites
+
+- Go {{.GoVersion}} or later
+
+### Running the Application
+
+```bash
+# Run directly
+go run main.go
+
+# Or build and run
+go build -o {{.ProjectName}}
+./{{.ProjectName}}
+```
+
+### Usage
+
+```bash
+# Run the application
+go run main.go
+```
+
+## Next Steps
+
+Add your application logic to `main.go`. Some ideas:
+
+- Add more functions and types
+- Read command-line arguments
+- Create a simple HTTP server
+- Connect to a database
+- Read configuration files
+
+## Project Structure
+
+```
+{{.ProjectName}}/
+├── main.go              # 🎯 All your code goes here
+├── go.mod              # 📦 Go module definition
+└── README.md           # 📖 This file
+```
+
+## Why Single Package?
+
+**Advantages:**
+- ✅ **Simple** - No complex directory structure
+- ✅ **Fast** - Quick to set up and understand
+- ✅ **Focused** - Everything in one place
+- ✅ **Portable** - Easy to share and demo
+
+**When to consider refactoring:**
+- 📈 **Growth** - When main.go exceeds ~500 lines
+- 👥 **Team** - Multiple developers working on it
+- 🔄 **Reuse** - Need to import code from other projects
+- 🏗️ **Complexity** - Multiple distinct features
+
+## Development
+
+### Building
+
+```bash
+# Build for current platform
+go build -o {{.ProjectName}}
+
+# Build for Linux
+GOOS=linux go build -o {{.ProjectName}}-linux
+
+# Build for Windows
+GOOS=windows go build -o {{.ProjectName}}.exe
+```
+
+### Testing
+
+```bash
+# Run tests (add _test.go files as needed)
+go test
+
+# Run with coverage
+go test -cover
+```
+
+### Formatting
+
+```bash
+# Format code
+go fmt
+
+# Check for issues
+go vet
+```
+
+## License
+
+{{.License}}
+
+---
+
+**Happy coding! 🎉**
+
+> Created with [Foundry](https://github.com/shapestone/foundry) using the `simple` layout.

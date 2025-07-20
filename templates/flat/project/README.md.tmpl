@@ -1,0 +1,233 @@
+# {{.ProjectName}}
+
+{{.Description}}
+
+{{- if .Author}}
+
+**Author:** {{.Author}}
+{{- end}}
+{{- if .Year}}
+**Year:** {{.Year}}
+{{- end}}
+
+## About
+
+This is a flat-structured Go project where all code lives in a single package but is organized across multiple files. This approach is perfect for:
+
+- 🚀 **Small to medium applications** - Real functionality without complexity
+- 🔧 **Working prototypes** - Beyond simple demos but not enterprise-scale
+- 🌐 **REST APIs** - HTTP services with proper organization
+- 💾 **Database applications** - Apps that need data persistence
+- 👥 **1-2 developer projects** - Manageable by small teams
+
+## Getting Started
+
+### Prerequisites
+
+- Go {{.GoVersion}} or later
+
+### Installation
+
+```bash
+# Clone and enter project directory
+git clone <repository-url>
+cd {{.ProjectName}}
+
+# Download dependencies
+go mod tidy
+```
+
+### Environment Variables
+
+Create a `.env` file or set these environment variables:
+
+```bash
+# Server Configuration
+PORT=8080
+DEBUG=false
+
+# Database Configuration (for future use)
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=yourpassword
+DB_NAME={{.ProjectName}}
+DB_SSLMODE=disable
+```
+
+### Running the Application
+
+```bash
+# Run directly
+go run .
+
+# Or build and run
+go build -o {{.ProjectName}}
+./{{.ProjectName}}
+```
+
+## API Endpoints
+
+### Health Check
+- `GET /health` - Check application health
+
+### Home
+- `GET /` - Welcome message and API info
+
+### Users API
+- `GET /api/v1/users` - List all users
+- `POST /api/v1/users` - Create a new user
+- `GET /api/v1/users/{id}` - Get user by ID
+- `PUT /api/v1/users/{id}` - Update user by ID
+- `DELETE /api/v1/users/{id}` - Delete user by ID
+
+### Example Usage
+
+```bash
+# Check health
+curl http://localhost:8080/health
+
+# Get all users
+curl http://localhost:8080/api/v1/users
+
+# Create a user
+curl -X POST http://localhost:8080/api/v1/users \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alice Johnson", "email": "alice@example.com"}'
+
+# Get a specific user
+curl http://localhost:8080/api/v1/users/1
+
+# Update a user
+curl -X PUT http://localhost:8080/api/v1/users/1 \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alice Smith", "email": "alice.smith@example.com"}'
+
+# Delete a user
+curl -X DELETE http://localhost:8080/api/v1/users/1
+```
+
+## Project Structure
+
+```
+{{.ProjectName}}/
+├── main.go              # 🎯 Application entry point and server setup
+├── handlers.go          # 🌐 HTTP request handlers
+├── models.go           # 📊 Data models and business logic
+├── database.go         # 💾 Database connection and operations
+├── config.go           # ⚙️ Configuration management
+├── go.mod              # 📦 Go module definition
+└── README.md           # 📖 This file
+```
+
+## Why Flat Structure?
+
+**Advantages:**
+- ✅ **Organized** - Clear separation of concerns across files
+- ✅ **Simple** - All in one package, easy to understand
+- ✅ **Scalable** - Can grow to medium-sized applications
+- ✅ **Maintainable** - Related code grouped together
+- ✅ **Fast development** - No package import complexity
+
+**When to consider refactoring to standard layout:**
+- 📈 **Growth** - When any single file exceeds ~500 lines
+- 👥 **Team expansion** - More than 2-3 developers
+- 🔄 **Code reuse** - Need to import code from other projects
+- 🏗️ **Complex domains** - Multiple distinct business areas
+
+## Development
+
+### Building
+
+```bash
+# Build for current platform
+go build -o {{.ProjectName}}
+
+# Build for Linux
+GOOS=linux go build -o {{.ProjectName}}-linux
+
+# Build for Windows
+GOOS=windows go build -o {{.ProjectName}}.exe
+```
+
+### Testing
+
+```bash
+# Run tests
+go test -v
+
+# Run tests with coverage
+go test -v -cover
+
+# Run specific test
+go test -v -run TestSpecificFunction
+```
+
+### Code Quality
+
+```bash
+# Format code
+go fmt
+
+# Check for issues
+go vet
+
+# Run linter (if golangci-lint is installed)
+golangci-lint run
+```
+
+### Database Migration (Future)
+
+When you implement a real database:
+
+```bash
+# Run migrations up
+go run . migrate up
+
+# Run migrations down
+go run . migrate down
+```
+
+## Extending the Application
+
+### Adding New Endpoints
+
+1. **Add model** in `models.go`
+2. **Add handlers** in `handlers.go`
+3. **Add routes** in `main.go` `setupRoutes()` function
+4. **Add database operations** in `database.go`
+
+### Adding Database Support
+
+1. Update `database.go` with real database driver
+2. Update `go.mod` with database dependencies
+3. Create migration files
+4. Update configuration for database settings
+
+### Example: Adding PostgreSQL
+
+```bash
+# Add PostgreSQL driver
+go get github.com/lib/pq
+
+# Update database.go to use real PostgreSQL connection
+# See commented examples in database.go
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+{{.License}}
+
+---
+
+**Happy coding! 🎉**
+
+> Created with [Foundry](https://github.com/shapestone/foundry) using the `flat` layout.

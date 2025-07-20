@@ -1,0 +1,96 @@
+// {{.ProjectName}} - {{.Description}}
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/gorilla/mux"
+)
+
+{{- if .Author}}
+// Author: {{.Author}}
+{{- end}}
+{{- if .Year}}
+// Year: {{.Year}}
+{{- end}}
+
+func main() {
+	fmt.Println("🚀 Starting {{.ProjectName}}...")
+
+	// Load configuration
+	config := LoadConfig()
+
+	// Initialize database
+	if err := InitDatabase(config); err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer CloseDatabase()
+
+	// Setup routes
+	router := setupRoutes()
+
+	// Configure server
+	server := &http.Server{
+		Addr:         fmt.Sprintf(":%s", config.Port),
+		Handler:      router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Start server in a goroutine
+	go func() {
+		fmt.Printf("🌐 Server starting on port %s\n", config.Port)
+		fmt.Printf("📡 http://localhost:%s\n", config.Port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed to start: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	fmt.Println("🛑 Shutting down server...")
+
+	// Graceful shutdown with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	fmt.Println("✅ Server exited")
+}
+
+// setupRoutes configures all application routes
+func setupRoutes() *mux.Router {
+	router := mux.NewRouter()
+
+	// API routes
+	api := router.PathPrefix("/api/v1").Subrouter()
+
+	// Health check
+	router.HandleFunc("/health", HealthHandler).Methods("GET")
+
+	// Home page
+	router.HandleFunc("/", HomeHandler).Methods("GET")
+
+	// User routes
+	api.HandleFunc("/users", ListUsersHandler).Methods("GET")
+	api.HandleFunc("/users", CreateUserHandler).Methods("POST")
+	api.HandleFunc("/users/{id}", GetUserHandler).Methods("GET")
+	api.HandleFunc("/users/{id}", UpdateUserHandler).Methods("PUT")
+	api.HandleFunc("/users/{id}", DeleteUserHandler).Methods("DELETE")
+
+	return router
+}

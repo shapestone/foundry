@@ -1,0 +1,314 @@
+# Service configuration for {{.CustomVariables.service_name | title}} Service
+# This file contains service-specific configuration and metadata
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service-config
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    version: v1
+    component: config
+data:
+  # Service configuration
+  service.yaml: |
+    service:
+      name: "{{.CustomVariables.service_name | default "user"}}"
+      version: "1.0.0"
+      description: "{{.CustomVariables.service_name | title}} microservice"
+      owner: "{{.ProjectName}} Team"
+
+    # Server configuration
+    server:
+      grpc_port: {{.CustomVariables.grpc_port | default "9090"}}
+      http_port: {{.CustomVariables.http_port | default "8080"}}
+      metrics_port: {{.CustomVariables.metrics_port | default "2112"}}
+      read_timeout: "15s"
+      write_timeout: "15s"
+      idle_timeout: "60s"
+      shutdown_timeout: "30s"
+
+    # Database configuration
+    database:
+      driver: "{{.CustomVariables.database_driver | default "postgres"}}"
+      max_open_conns: 25
+      max_idle_conns: 25
+      conn_max_lifetime: "5m"
+      conn_max_idle_time: "5m"
+
+    # Cache configuration
+    redis:
+      max_retries: 3
+      pool_size: 10
+      min_idle_conns: 5
+      dial_timeout: "5s"
+      read_timeout: "3s"
+      write_timeout: "3s"
+
+    # Message broker configuration
+    message_broker:
+      type: "{{.CustomVariables.message_broker | default "nats"}}"
+      {{- if eq (.CustomVariables.message_broker | default "nats") "nats"}}
+      nats:
+        max_reconnects: 5
+        reconnect_wait: "2s"
+        timeout: "2s"
+      {{- else if eq (.CustomVariables.message_broker | default "nats") "kafka"}}
+      kafka:
+        session_timeout: "10s"
+        heartbeat_interval: "3s"
+        rebalance_timeout: "60s"
+        retry_backoff: "2s"
+      {{- else if eq (.CustomVariables.message_broker | default "nats") "rabbitmq"}}
+      rabbitmq:
+        heartbeat: "10s"
+        connection_timeout: "30s"
+        channel_max: 0
+      {{- end}}
+
+    # Observability configuration
+    observability:
+      logging:
+        level: "info"
+        format: "json"
+        output: "stdout"
+
+      metrics:
+        enabled: true
+        path: "/metrics"
+        namespace: "{{.ProjectName | lower}}"
+        subsystem: "{{.CustomVariables.service_name | default "user"}}"
+
+      tracing:
+        enabled: true
+        sample_rate: 1.0
+
+    # Security configuration
+    security:
+      cors:
+        enabled: true
+        allowed_origins: ["*"]
+        allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        allowed_headers: ["Content-Type", "Authorization", "X-Request-ID"]
+        max_age: "12h"
+
+      rate_limiting:
+        enabled: true
+        requests_per_minute: 100
+        burst_size: 10
+
+    # Circuit breaker configuration
+    circuit_breaker:
+      enabled: true
+      max_requests: 10
+      interval: "60s"
+      timeout: "30s"
+      max_consecutive_failures: 5
+
+    # Health check configuration
+    health:
+      check_interval: "30s"
+      timeout: "10s"
+
+    # Feature flags
+    features:
+      new_api_enabled: false
+      experimental_caching: false
+      enhanced_logging: true
+
+  # Environment-specific overrides
+  development.yaml: |
+    observability:
+      logging:
+        level: "debug"
+      tracing:
+        sample_rate: 1.0
+    features:
+      enhanced_logging: true
+
+  staging.yaml: |
+    observability:
+      logging:
+        level: "info"
+      tracing:
+        sample_rate: 0.1
+
+  production.yaml: |
+    observability:
+      logging:
+        level: "warn"
+      tracing:
+        sample_rate: 0.01
+    security:
+      cors:
+        allowed_origins: ["https://{{.ProjectName | lower}}.com"]
+    circuit_breaker:
+      max_consecutive_failures: 3
+
+---
+# Service discovery configuration
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    version: v1
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "{{.CustomVariables.metrics_port | default "2112"}}"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+    - name: grpc
+      port: {{.CustomVariables.grpc_port | default "9090"}}
+      targetPort: grpc
+      protocol: TCP
+    - name: http
+      port: {{.CustomVariables.http_port | default "8080"}}
+      targetPort: http
+      protocol: TCP
+    - name: metrics
+      port: {{.CustomVariables.metrics_port | default "2112"}}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+
+---
+# Service Monitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    version: v1
+spec:
+  selector:
+    matchLabels:
+      app: {{.CustomVariables.service_name | default "user"}}-service
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+
+---
+# Pod Disruption Budget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service-pdb
+  namespace: {{.CustomVariables.namespace | default "default"}}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: {{.CustomVariables.service_name | default "user"}}-service
+
+---
+# Horizontal Pod Autoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service-hpa
+  namespace: {{.CustomVariables.namespace | default "default"}}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{.CustomVariables.service_name | default "user"}}-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+      selectPolicy: Max
+
+---
+# Network Policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service-netpol
+  namespace: {{.CustomVariables.namespace | default "default"}}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{.CustomVariables.service_name | default "user"}}-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: {{.CustomVariables.namespace | default "default"}}
+        - namespaceSelector:
+            matchLabels:
+              name: istio-system
+      ports:
+        - protocol: TCP
+          port: {{.CustomVariables.grpc_port | default "9090"}}
+        - protocol: TCP
+          port: {{.CustomVariables.http_port | default "8080"}}
+        - protocol: TCP
+          port: {{.CustomVariables.metrics_port | default "2112"}}
+  egress:
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: {{.CustomVariables.namespace | default "default"}}
+      ports:
+        - protocol: TCP
+          port: 5432  # PostgreSQL
+        - protocol: TCP
+          port: 6379  # Redis
+        {{- if eq (.CustomVariables.message_broker | default "nats") "nats"}}
+        - protocol: TCP
+          port: 4222  # NATS
+        {{- else if eq (.CustomVariables.message_broker | default "nats") "kafka"}}
+        - protocol: TCP
+          port: 9092  # Kafka
+        {{- else if eq (.CustomVariables.message_broker | default "nats") "rabbitmq"}}
+        - protocol: TCP
+          port: 5672  # RabbitMQ
+        {{- end}}

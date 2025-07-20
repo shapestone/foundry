@@ -1,0 +1,69 @@
+# Buf configuration for {{.ProjectName}}
+# This file configures protocol buffer compilation and linting
+
+version: v1
+
+# Module configuration
+modules:
+  - path: api/proto
+    name: buf.build/{{.GitHubUsername | default "yourorg"}}/{{.ProjectName | lower}}
+  - path: shared/proto
+    name: buf.build/{{.GitHubUsername | default "yourorg"}}/{{.ProjectName | lower}}-shared
+
+# Build configuration
+build:
+  roots:
+    - api/proto
+    - shared/proto
+  excludes:
+    - api/proto/vendor
+    - shared/proto/vendor
+
+# Linting configuration
+lint:
+  use:
+    - DEFAULT
+    - COMMENTS
+    - FILE_LAYOUT
+  except:
+    - PACKAGE_DIRECTORY_MATCH  # Allow flexible directory structure
+    - PACKAGE_VERSION_SUFFIX   # Don't require v1 suffix
+  ignore:
+    - api/proto/third_party
+    - shared/proto/third_party
+  enum_zero_value_suffix: _UNSPECIFIED
+  rpc_allow_same_request_response: false
+  rpc_allow_google_protobuf_empty_requests: true
+  rpc_allow_google_protobuf_empty_responses: true
+  service_suffix: Service
+
+# Breaking change detection
+breaking:
+  use:
+    - FILE
+  except:
+    - EXTENSION_NO_DELETE
+    - FIELD_SAME_DEFAULT
+  ignore:
+    - api/proto/third_party
+    - shared/proto/third_party
+
+# Dependencies
+deps:
+  - buf.build/googleapis/googleapis
+  - buf.build/grpc-ecosystem/grpc-gateway
+
+# Input configuration for specific directories
+input:
+  - directory: api/proto
+    exclude:
+      - api/proto/vendor
+  - directory: shared/proto
+    exclude:
+      - shared/proto/vendor
+
+# Workspace configuration (if using buf workspaces)
+workspace:
+  directories:
+    - api/proto
+    - shared/proto

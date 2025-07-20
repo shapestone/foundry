@@ -1,0 +1,54 @@
+package ports
+
+import (
+	"context"
+
+	"{{if .github_username}}github.com/{{.github_username}}/{{end}}{{.project_name}}/internal/core/domain"
+)
+
+// UserRepository defines the interface for user data access
+// This is a secondary port (driven)
+type UserRepository interface {
+	// Create stores a new user
+	Create(ctx context.Context, user *domain.User) error
+
+	// GetByID retrieves a user by their ID
+	GetByID(ctx context.Context, id string) (*domain.User, error)
+
+	// GetByEmail retrieves a user by their email
+	GetByEmail(ctx context.Context, email string) (*domain.User, error)
+
+	// Update modifies an existing user
+	Update(ctx context.Context, user *domain.User) error
+
+	// Delete removes a user by their ID
+	Delete(ctx context.Context, id string) error
+
+	// List retrieves users with pagination
+	List(ctx context.Context, limit, offset int) ([]*domain.User, error)
+
+	// Exists checks if a user exists by ID
+	Exists(ctx context.Context, id string) (bool, error)
+}
+
+// UserService defines the interface for user business logic
+// This is a primary port (driving)
+type UserService interface {
+	// CreateUser creates a new user with validation
+	CreateUser(ctx context.Context, email, name string) (*domain.User, error)
+
+	// GetUser retrieves a user by ID
+	GetUser(ctx context.Context, id string) (*domain.User, error)
+
+	// GetUserByEmail retrieves a user by email
+	GetUserByEmail(ctx context.Context, email string) (*domain.User, error)
+
+	// UpdateUser updates user information
+	UpdateUser(ctx context.Context, id string, name, email string) (*domain.User, error)
+
+	// DeleteUser removes a user
+	DeleteUser(ctx context.Context, id string) error
+
+	// ListUsers retrieves users with pagination
+	ListUsers(ctx context.Context, limit, offset int) ([]*domain.User, error)
+}

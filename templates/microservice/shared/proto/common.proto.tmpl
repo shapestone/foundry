@@ -1,0 +1,443 @@
+// Common protocol buffer definitions for {{.ProjectName}}
+// This file contains shared types and messages used across all microservices
+
+syntax = "proto3";
+
+package {{.ProjectName | lower}}.common.v1;
+
+option go_package = "{{.ModuleName}}/shared/proto/common";
+option java_package = "com.{{.ProjectName | lower}}.common.v1";
+option java_multiple_files = true;
+option java_outer_classname = "CommonProto";
+option csharp_namespace = "{{.ProjectName}}.Common.V1";
+option php_namespace = "{{.ProjectName}}\\Common\\V1";
+option ruby_package = "{{.ProjectName}}::Common::V1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+
+// Common pagination request
+message PaginationRequest {
+  // Page number (1-based)
+  int32 page = 1;
+
+  // Number of items per page (max 100)
+  int32 page_size = 2;
+
+  // Sort field
+  string sort_by = 3;
+
+  // Sort order (asc, desc)
+  string sort_order = 4;
+}
+
+// Common pagination response
+message PaginationResponse {
+  // Current page number
+  int32 page = 1;
+
+  // Number of items per page
+  int32 page_size = 2;
+
+  // Total number of items
+  int64 total_items = 3;
+
+  // Total number of pages
+  int32 total_pages = 4;
+
+  // Whether there is a next page
+  bool has_next = 5;
+
+  // Whether there is a previous page
+  bool has_previous = 6;
+}
+
+// Common filter request
+message FilterRequest {
+  // Search query
+  string query = 1;
+
+  // Filters as key-value pairs
+  map<string, string> filters = 2;
+
+  // Date range filter
+  DateRange date_range = 3;
+
+  // Status filter
+  repeated string statuses = 4;
+
+  // Tags filter
+  repeated string tags = 5;
+}
+
+// Date range for filtering
+message DateRange {
+  // Start date (inclusive)
+  google.protobuf.Timestamp start = 1;
+
+  // End date (inclusive)
+  google.protobuf.Timestamp end = 2;
+}
+
+// Common metadata for all entities
+message Metadata {
+  // Unique identifier
+  string id = 1;
+
+  // Creation timestamp
+  google.protobuf.Timestamp created_at = 2;
+
+  // Last update timestamp
+  google.protobuf.Timestamp updated_at = 3;
+
+  // Entity version (for optimistic concurrency)
+  int64 version = 4;
+
+  // Created by user ID
+  string created_by = 5;
+
+  // Last updated by user ID
+  string updated_by = 6;
+
+  // Soft delete timestamp (if applicable)
+  google.protobuf.Timestamp deleted_at = 7;
+
+  // Additional metadata as key-value pairs
+  map<string, string> annotations = 8;
+
+  // Labels for categorization
+  map<string, string> labels = 9;
+}
+
+// Common status enumeration
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_ACTIVE = 1;
+  STATUS_INACTIVE = 2;
+  STATUS_PENDING = 3;
+  STATUS_SUSPENDED = 4;
+  STATUS_DELETED = 5;
+  STATUS_ARCHIVED = 6;
+  STATUS_DRAFT = 7;
+  STATUS_PUBLISHED = 8;
+}
+
+// Common error details
+message ErrorDetail {
+  // Error code
+  string code = 1;
+
+  // Error message
+  string message = 2;
+
+  // Field that caused the error (for validation errors)
+  string field = 3;
+
+  // Additional error context
+  map<string, string> context = 4;
+}
+
+// Batch operation request
+message BatchRequest {
+  // Operation type
+  BatchOperation operation = 1;
+
+  // Entity IDs to operate on
+  repeated string ids = 2;
+
+  // Parameters for the operation
+  map<string, string> parameters = 3;
+}
+
+// Batch operation types
+enum BatchOperation {
+  BATCH_OPERATION_UNSPECIFIED = 0;
+  BATCH_OPERATION_DELETE = 1;
+  BATCH_OPERATION_UPDATE = 2;
+  BATCH_OPERATION_ACTIVATE = 3;
+  BATCH_OPERATION_DEACTIVATE = 4;
+  BATCH_OPERATION_ARCHIVE = 5;
+  BATCH_OPERATION_RESTORE = 6;
+}
+
+// Batch operation response
+message BatchResponse {
+  // Number of successfully processed items
+  int32 success_count = 1;
+
+  // Number of failed items
+  int32 failure_count = 2;
+
+  // Details of failed operations
+  repeated BatchFailure failures = 3;
+
+  // Operation summary
+  string summary = 4;
+}
+
+// Batch operation failure
+message BatchFailure {
+  // Entity ID that failed
+  string id = 1;
+
+  // Error details
+  ErrorDetail error = 2;
+}
+
+// Health check request
+message HealthCheckRequest {
+  // Service name to check
+  string service = 1;
+}
+
+// Health check response
+message HealthCheckResponse {
+  // Health status
+  HealthStatus status = 1;
+
+  // Status message
+  string message = 2;
+
+  // Additional health details
+  map<string, string> details = 3;
+
+  // Timestamp of the check
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+// Health status enumeration
+enum HealthStatus {
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  HEALTH_STATUS_SERVING = 1;
+  HEALTH_STATUS_NOT_SERVING = 2;
+  HEALTH_STATUS_UNKNOWN = 3;
+  HEALTH_STATUS_DEGRADED = 4;
+}
+
+// Audit log entry
+message AuditLog {
+  // Event ID
+  string event_id = 1;
+
+  // Timestamp of the event
+  google.protobuf.Timestamp timestamp = 2;
+
+  // User who performed the action
+  string user_id = 3;
+
+  // Action performed
+  string action = 4;
+
+  // Resource affected
+  string resource = 5;
+
+  // Resource ID
+  string resource_id = 6;
+
+  // Details of the change
+  google.protobuf.Struct details = 7;
+
+  // Source IP address
+  string source_ip = 8;
+
+  // User agent
+  string user_agent = 9;
+
+  // Request ID for correlation
+  string request_id = 10;
+}
+
+// Configuration value
+message ConfigValue {
+  // Configuration key
+  string key = 1;
+
+  // Configuration value
+  string value = 2;
+
+  // Value type
+  ConfigValueType type = 3;
+
+  // Whether the value is sensitive
+  bool sensitive = 4;
+
+  // Description of the configuration
+  string description = 5;
+
+  // Default value
+  string default_value = 6;
+
+  // Validation rules
+  repeated string validation_rules = 7;
+}
+
+// Configuration value types
+enum ConfigValueType {
+  CONFIG_VALUE_TYPE_UNSPECIFIED = 0;
+  CONFIG_VALUE_TYPE_STRING = 1;
+  CONFIG_VALUE_TYPE_INTEGER = 2;
+  CONFIG_VALUE_TYPE_FLOAT = 3;
+  CONFIG_VALUE_TYPE_BOOLEAN = 4;
+  CONFIG_VALUE_TYPE_JSON = 5;
+  CONFIG_VALUE_TYPE_URL = 6;
+  CONFIG_VALUE_TYPE_EMAIL = 7;
+  CONFIG_VALUE_TYPE_PASSWORD = 8;
+}
+
+// Metrics data point
+message MetricDataPoint {
+  // Metric name
+  string name = 1;
+
+  // Metric value
+  double value = 2;
+
+  // Timestamp of the measurement
+  google.protobuf.Timestamp timestamp = 3;
+
+  // Labels/tags for the metric
+  map<string, string> labels = 4;
+
+  // Metric type
+  MetricType type = 5;
+}
+
+// Metric types
+enum MetricType {
+  METRIC_TYPE_UNSPECIFIED = 0;
+  METRIC_TYPE_COUNTER = 1;
+  METRIC_TYPE_GAUGE = 2;
+  METRIC_TYPE_HISTOGRAM = 3;
+  METRIC_TYPE_SUMMARY = 4;
+}
+
+// Rate limiting information
+message RateLimit {
+  // Number of requests allowed
+  int32 limit = 1;
+
+  // Number of requests remaining
+  int32 remaining = 2;
+
+  // Time window in seconds
+  int32 window_seconds = 3;
+
+  // Timestamp when the limit resets
+  google.protobuf.Timestamp reset_time = 4;
+}
+
+// Request context information
+message RequestContext {
+  // Request ID for tracing
+  string request_id = 1;
+
+  // User ID making the request
+  string user_id = 2;
+
+  // Client IP address
+  string client_ip = 3;
+
+  // User agent
+  string user_agent = 4;
+
+  // Request timestamp
+  google.protobuf.Timestamp timestamp = 5;
+
+  // Additional context data
+  map<string, string> metadata = 6;
+}
+
+// Feature flag definition
+message FeatureFlag {
+  // Flag name
+  string name = 1;
+
+  // Whether the flag is enabled
+  bool enabled = 2;
+
+  // Flag description
+  string description = 3;
+
+  // Target audience (percentage rollout)
+  int32 rollout_percentage = 4;
+
+  // User segments this flag applies to
+  repeated string user_segments = 5;
+
+  // Flag creation time
+  google.protobuf.Timestamp created_at = 6;
+
+  // Flag last update time
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+// Validation error
+message ValidationError {
+  // Field name that failed validation
+  string field = 1;
+
+  // Validation error code
+  string code = 2;
+
+  // Human-readable error message
+  string message = 3;
+
+  // Rejected value
+  string rejected_value = 4;
+}
+
+// Multi-language text
+message LocalizedText {
+  // Language code (ISO 639-1)
+  string language = 1;
+
+  // Text content
+  string text = 2;
+}
+
+// Address information
+message Address {
+  // Street address line 1
+  string line1 = 1;
+
+  // Street address line 2
+  string line2 = 2;
+
+  // City
+  string city = 3;
+
+  // State/Province
+  string state = 4;
+
+  // Postal/ZIP code
+  string postal_code = 5;
+
+  // Country code (ISO 3166-1 alpha-2)
+  string country = 6;
+
+  // Latitude
+  double latitude = 7;
+
+  // Longitude
+  double longitude = 8;
+}
+
+// Contact information
+message ContactInfo {
+  // Email address
+  string email = 1;
+
+  // Phone number
+  string phone = 2;
+
+  // Address
+  Address address = 3;
+
+  // Website URL
+  string website = 4;
+
+  // Social media handles
+  map<string, string> social_media = 5;
+}

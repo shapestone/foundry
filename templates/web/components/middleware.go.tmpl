@@ -1,0 +1,472 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net/http"
+	"runtime/debug"
+	"strings"
+	"time"
+
+	"github.com/gorilla/sessions"
+	"{{.ModuleName}}/pkg/errors"
+)
+
+// {{.ComponentName | title}}Middleware provides {{.ComponentName | snake_case}} specific web middleware functionality
+type {{.ComponentName | title}}Middleware struct {
+	logger *log.Logger
+	store  *sessions.CookieStore
+}
+
+// New{{.ComponentName | title}}Middleware creates a new {{.ComponentName | snake_case}} middleware
+func New{{.ComponentName | title}}Middleware(logger *log.Logger, store *sessions.CookieStore) *{{.ComponentName | title}}Middleware {
+	return &{{.ComponentName | title}}Middleware{
+		logger: logger,
+		store:  store,
+	}
+}
+
+// Logger middleware logs HTTP requests with detailed information
+func (m *{{.ComponentName | title}}Middleware) Logger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		// Create a custom ResponseWriter to capture status code and size
+		wrapped := &responseWriter{
+			ResponseWriter: w,
+			statusCode:     http.StatusOK,
+			size:          0,
+		}
+
+		// Get client IP
+		clientIP := m.getClientIP(r)
+
+		next.ServeHTTP(wrapped, r)
+
+		duration := time.Since(start)
+
+		// Log the request
+		m.logger.Printf(
+			"%s - %s %s %s %d %d %v %s \"%s\"",
+			clientIP,
+			r.Method,
+			r.URL.Path,
+			r.Proto,
+			wrapped.statusCode,
+			wrapped.size,
+			duration,
+			r.RemoteAddr,
+			r.UserAgent(),
+		)
+	})
+}
+
+// Recovery middleware recovers from panics and logs them
+func (m *{{.ComponentName | title}}Middleware) Recovery(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				// Log the panic with stack trace
+				m.logger.Printf("Panic recovered: %v\n%s", err, debug.Stack())
+
+				// Check if headers have been written
+				if w.Header().Get("Content-Type") == "" {
+					// Determine response type based on request
+					if m.isAPIRequest(r) {
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusInternalServerError)
+						w.Write([]byte(`{"error":"Internal server error"}`))
+					} else {
+						// Render error page for web requests
+						m.renderErrorPage(w, r, "Internal Server Error", http.StatusInternalServerError)
+					}
+				}
+			}
+		}()
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Authentication middleware for web pages
+func (m *{{.ComponentName | title}}Middleware) RequireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session, err := m.store.Get(r, "session")
+		if err != nil {
+			m.redirectToLogin(w, r, "Session error")
+			return
+		}
+
+		// Check if user is authenticated
+		userID, ok := session.Values["user_id"]
+		if !ok || userID == nil {
+			m.redirectToLogin(w, r, "Authentication required")
+			return
+		}
+
+		// Add user ID to context
+		ctx := context.WithValue(r.Context(), "user_id", userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// GuestOnly middleware - redirect authenticated users away
+func (m *{{.ComponentName | title}}Middleware) GuestOnly(redirectURL string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			session, err := m.store.Get(r, "session")
+			if err == nil {
+				if userID, ok := session.Values["user_id"]; ok && userID != nil {
+					http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+					return
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RateLimit middleware implements basic rate limiting
+func (m *{{.ComponentName | title}}Middleware) RateLimit(requestsPerMinute int) func(http.Handler) http.Handler {
+	// Simple in-memory rate limiter (use Redis in production)
+	clients := make(map[string][]time.Time)
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			clientIP := m.getClientIP(r)
+			now := time.Now()
+
+			// Clean up old entries
+			if requests, exists := clients[clientIP]; exists {
+				var validRequests []time.Time
+				for _, reqTime := range requests {
+					if now.Sub(reqTime) < time.Minute {
+						validRequests = append(validRequests, reqTime)
+					}
+				}
+				clients[clientIP] = validRequests
+			}
+
+			// Check rate limit
+			if len(clients[clientIP]) >= requestsPerMinute {
+				if m.isAPIRequest(r) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusTooManyRequests)
+					w.Write([]byte(`{"error":"Rate limit exceeded"}`))
+				} else {
+					m.renderErrorPage(w, r, "Too Many Requests", http.StatusTooManyRequests)
+				}
+				return
+			}
+
+			// Add current request
+			clients[clientIP] = append(clients[clientIP], now)
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// ContentType middleware ensures proper content type for API endpoints
+func (m *{{.ComponentName | title}}Middleware) RequireJSON(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only check content type for requests with body
+		if r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" {
+			contentType := r.Header.Get("Content-Type")
+			if !strings.Contains(contentType, "application/json") {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnsupportedMediaType)
+				w.Write([]byte(`{"error":"Content-Type must be application/json"}`))
+				return
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Timeout middleware sets a timeout for requests
+func (m *{{.ComponentName | title}}Middleware) Timeout(timeout time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx, cancel := context.WithTimeout(r.Context(), timeout)
+			defer cancel()
+
+			// Channel to capture if handler completed
+			done := make(chan bool, 1)
+
+			go func() {
+				next.ServeHTTP(w, r.WithContext(ctx))
+				done <- true
+			}()
+
+			select {
+			case <-done:
+				// Handler completed normally
+				return
+			case <-ctx.Done():
+				// Timeout occurred
+				if ctx.Err() == context.DeadlineExceeded {
+					if m.isAPIRequest(r) {
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusRequestTimeout)
+						w.Write([]byte(`{"error":"Request timeout"}`))
+					} else {
+						m.renderErrorPage(w, r, "Request Timeout", http.StatusRequestTimeout)
+					}
+				}
+			}
+		})
+	}
+}
+
+// Security middleware adds security headers
+func (m *{{.ComponentName | title}}Middleware) Security(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Security headers
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+
+		// HTTPS headers (enable in production)
+		if r.TLS != nil {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+
+		// Content Security Policy for web pages
+		if !m.isAPIRequest(r) {
+			csp := "default-src 'self'; " +
+				"script-src 'self' 'unsafe-inline'; " +
+				"style-src 'self' 'unsafe-inline'; " +
+				"img-src 'self' data: https:; " +
+				"font-src 'self'; " +
+				"connect-src 'self'"
+			w.Header().Set("Content-Security-Policy", csp)
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Flash middleware for handling flash messages
+func (m *{{.ComponentName | title}}Middleware) Flash(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip flash handling for API requests
+		if m.isAPIRequest(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		session, err := m.store.Get(r, "session")
+		if err != nil {
+			m.logger.Printf("Flash middleware: session error: %v", err)
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Add flash helper to context
+		ctx := context.WithValue(r.Context(), "flash", &flashHelper{session: session})
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// Maintenance middleware shows maintenance page
+func (m *{{.ComponentName | title}}Middleware) MaintenanceMode(enabled bool, allowedIPs []string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !enabled {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Check if client IP is in allowed list
+			clientIP := m.getClientIP(r)
+			for _, allowedIP := range allowedIPs {
+				if clientIP == allowedIP {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			// Show maintenance page
+			if m.isAPIRequest(r) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				w.Write([]byte(`{"error":"Service temporarily unavailable"}`))
+			} else {
+				m.renderMaintenancePage(w, r)
+			}
+		})
+	}
+}
+
+// Helper methods
+
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+	size       int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Write(data []byte) (int, error) {
+	size, err := rw.ResponseWriter.Write(data)
+	rw.size += size
+	return size, err
+}
+
+func (m *{{.ComponentName | title}}Middleware) getClientIP(r *http.Request) string {
+	// Check X-Forwarded-For header
+	forwarded := r.Header.Get("X-Forwarded-For")
+	if forwarded != "" {
+		// Take the first IP
+		parts := strings.Split(forwarded, ",")
+		return strings.TrimSpace(parts[0])
+	}
+
+	// Check X-Real-IP header
+	realIP := r.Header.Get("X-Real-IP")
+	if realIP != "" {
+		return realIP
+	}
+
+	// Fall back to RemoteAddr
+	return strings.Split(r.RemoteAddr, ":")[0]
+}
+
+func (m *{{.ComponentName | title}}Middleware) isAPIRequest(r *http.Request) bool {
+	return strings.HasPrefix(r.URL.Path, "/api/") ||
+		strings.Contains(r.Header.Get("Accept"), "application/json") ||
+		strings.Contains(r.Header.Get("Content-Type"), "application/json")
+}
+
+func (m *{{.ComponentName | title}}Middleware) redirectToLogin(w http.ResponseWriter, r *http.Request, message string) {
+	// Store the intended URL in session
+	session, _ := m.store.Get(r, "session")
+	session.Values["intended_url"] = r.URL.Path
+	if message != "" {
+		session.AddFlash(message, "error")
+	}
+	session.Save(r, w)
+
+	// Redirect to login page
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func (m *{{.ComponentName | title}}Middleware) renderErrorPage(w http.ResponseWriter, r *http.Request, message string, statusCode int) {
+	w.WriteHeader(statusCode)
+
+	// Simple error page - you should implement proper template rendering
+	html := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Error %d - {{.ProjectName}}</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        .error { max-width: 500px; margin: 0 auto; }
+        h1 { color: #d32f2f; }
+        a { color: #1976d2; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="error">
+        <h1>Error %d</h1>
+        <p>%s</p>
+        <p><a href="/">Go back to homepage</a></p>
+    </div>
+</body>
+</html>`, statusCode, statusCode, message)
+
+	w.Header().Set("Content-Type", "text/html")
+	w.Write([]byte(html))
+}
+
+func (m *{{.ComponentName | title}}Middleware) renderMaintenancePage(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusServiceUnavailable)
+
+	html := `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Maintenance - {{.ProjectName}}</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+        .maintenance { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #ff9800; margin-bottom: 20px; }
+        p { color: #666; line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <div class="maintenance">
+        <h1>🔧 Under Maintenance</h1>
+        <p>We're currently performing scheduled maintenance to improve your experience.</p>
+        <p>We'll be back shortly. Thank you for your patience!</p>
+    </div>
+</body>
+</html>`
+
+	w.Header().Set("Content-Type", "text/html")
+	w.Write([]byte(html))
+}
+
+// Flash helper for templates
+type flashHelper struct {
+	session *sessions.Session
+}
+
+func (f *flashHelper) Add(category, message string) {
+	f.session.AddFlash(message, category)
+}
+
+func (f *flashHelper) Get(category string) []interface{} {
+	return f.session.Flashes(category)
+}
+
+// GetFlash returns a flash helper from request context
+func GetFlash(r *http.Request) *flashHelper {
+	if flash, ok := r.Context().Value("flash").(*flashHelper); ok {
+		return flash
+	}
+	return nil
+}
+
+// Chain combines multiple middleware functions
+func Chain(middlewares ...func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		for i := len(middlewares) - 1; i >= 0; i-- {
+			next = middlewares[i](next)
+		}
+		return next
+	}
+}
+
+// ConditionalMiddleware applies middleware only if condition is true
+func ConditionalMiddleware(condition bool, middleware func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		if condition {
+			return middleware(next)
+		}
+		return next
+	}
+}
+
+// PathMiddleware applies middleware only to specific paths
+func PathMiddleware(pathPrefix string, middleware func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, pathPrefix) {
+				middleware(next).ServeHTTP(w, r)
+			} else {
+				next.ServeHTTP(w, r)
+			}
+		})
+	}
+}

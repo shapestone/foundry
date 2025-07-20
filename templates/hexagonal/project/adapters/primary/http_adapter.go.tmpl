@@ -1,0 +1,241 @@
+package primary
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+
+	"{{if .github_username}}github.com/{{.github_username}}/{{end}}{{.project_name}}/internal/core/domain"
+	"{{if .github_username}}github.com/{{.github_username}}/{{end}}{{.project_name}}/internal/core/ports"
+
+	"github.com/gorilla/mux"
+)
+
+// HTTPAdapter handles HTTP requests
+type HTTPAdapter struct {
+	userService ports.UserService
+}
+
+// NewHTTPAdapter creates a new HTTP adapter
+func NewHTTPAdapter(userService ports.UserService) *HTTPAdapter {
+	return &HTTPAdapter{
+		userService: userService,
+	}
+}
+
+// RegisterRoutes registers all HTTP routes
+func (h *HTTPAdapter) RegisterRoutes(router *mux.Router) {
+	// Health check
+	router.HandleFunc("/health", h.healthCheck).Methods("GET")
+	router.HandleFunc("/", h.welcome).Methods("GET")
+
+	// User routes
+	api := router.PathPrefix("/api/v1").Subrouter()
+	api.HandleFunc("/users", h.createUser).Methods("POST")
+	api.HandleFunc("/users", h.listUsers).Methods("GET")
+	api.HandleFunc("/users/{id}", h.getUser).Methods("GET")
+	api.HandleFunc("/users/{id}", h.updateUser).Methods("PUT")
+	api.HandleFunc("/users/{id}", h.deleteUser).Methods("DELETE")
+}
+
+// Request/Response types
+type CreateUserRequest struct {
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
+type UpdateUserRequest struct {
+	Email string `json:"email,omitempty"`
+	Name  string `json:"name,omitempty"`
+}
+
+type UserResponse struct {
+	ID        string `json:"id"`
+	Email     string `json:"email"`
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+type ListUsersResponse struct {
+	Users  []UserResponse `json:"users"`
+	Limit  int            `json:"limit"`
+	Offset int            `json:"offset"`
+}
+
+type ErrorResponse struct {
+	Error   string `json:"error"`
+	Message string `json:"message"`
+}
+
+// Health check endpoint
+func (h *HTTPAdapter) healthCheck(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "healthy",
+		"service": "{{.project_name}}",
+	})
+}
+
+// Welcome endpoint
+func (h *HTTPAdapter) welcome(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Welcome to {{.project_name}}",
+		"architecture": "hexagonal",
+	})
+}
+
+// Create user endpoint
+func (h *HTTPAdapter) createUser(w http.ResponseWriter, r *http.Request) {
+	var req CreateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.errorResponse(w, http.StatusBadRequest, "invalid request body", err.Error())
+		return
+	}
+
+	user, err := h.userService.CreateUser(r.Context(), req.Email, req.Name)
+	if err != nil {
+		switch err {
+		case domain.ErrUserExists:
+			h.errorResponse(w, http.StatusConflict, "user already exists", err.Error())
+		case domain.ErrInvalidEmail, domain.ErrInvalidName:
+			h.errorResponse(w, http.StatusBadRequest, "validation error", err.Error())
+		default:
+			h.errorResponse(w, http.StatusInternalServerError, "failed to create user", err.Error())
+		}
+		return
+	}
+
+	h.jsonResponse(w, http.StatusCreated, h.toUserResponse(user))
+}
+
+// Get user endpoint
+func (h *HTTPAdapter) getUser(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	user, err := h.userService.GetUser(r.Context(), id)
+	if err != nil {
+		switch err {
+		case domain.ErrUserNotFound:
+			h.errorResponse(w, http.StatusNotFound, "user not found", err.Error())
+		case domain.ErrInvalidUserID:
+			h.errorResponse(w, http.StatusBadRequest, "invalid user ID", err.Error())
+		default:
+			h.errorResponse(w, http.StatusInternalServerError, "failed to get user", err.Error())
+		}
+		return
+	}
+
+	h.jsonResponse(w, http.StatusOK, h.toUserResponse(user))
+}
+
+// Update user endpoint
+func (h *HTTPAdapter) updateUser(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	var req UpdateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.errorResponse(w, http.StatusBadRequest, "invalid request body", err.Error())
+		return
+	}
+
+	user, err := h.userService.UpdateUser(r.Context(), id, req.Name, req.Email)
+	if err != nil {
+		switch err {
+		case domain.ErrUserNotFound:
+			h.errorResponse(w, http.StatusNotFound, "user not found", err.Error())
+		case domain.ErrUserExists:
+			h.errorResponse(w, http.StatusConflict, "email already taken", err.Error())
+		case domain.ErrInvalidEmail, domain.ErrInvalidName, domain.ErrInvalidUserID:
+			h.errorResponse(w, http.StatusBadRequest, "validation error", err.Error())
+		default:
+			h.errorResponse(w, http.StatusInternalServerError, "failed to update user", err.Error())
+		}
+		return
+	}
+
+	h.jsonResponse(w, http.StatusOK, h.toUserResponse(user))
+}
+
+// Delete user endpoint
+func (h *HTTPAdapter) deleteUser(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	err := h.userService.DeleteUser(r.Context(), id)
+	if err != nil {
+		switch err {
+		case domain.ErrUserNotFound:
+			h.errorResponse(w, http.StatusNotFound, "user not found", err.Error())
+		case domain.ErrInvalidUserID:
+			h.errorResponse(w, http.StatusBadRequest, "invalid user ID", err.Error())
+		default:
+			h.errorResponse(w, http.StatusInternalServerError, "failed to delete user", err.Error())
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// List users endpoint
+func (h *HTTPAdapter) listUsers(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+
+	if limit <= 0 {
+		limit = 10
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	users, err := h.userService.ListUsers(r.Context(), limit, offset)
+	if err != nil {
+		h.errorResponse(w, http.StatusInternalServerError, "failed to list users", err.Error())
+		return
+	}
+
+	response := ListUsersResponse{
+		Users:  make([]UserResponse, len(users)),
+		Limit:  limit,
+		Offset: offset,
+	}
+
+	for i, user := range users {
+		response.Users[i] = h.toUserResponse(user)
+	}
+
+	h.jsonResponse(w, http.StatusOK, response)
+}
+
+// Helper methods
+func (h *HTTPAdapter) toUserResponse(user *domain.User) UserResponse {
+	return UserResponse{
+		ID:        user.ID,
+		Email:     user.Email,
+		Name:      user.Name,
+		CreatedAt: user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt: user.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+	}
+}
+
+func (h *HTTPAdapter) jsonResponse(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
+
+func (h *HTTPAdapter) errorResponse(w http.ResponseWriter, status int, error, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(ErrorResponse{
+		Error:   error,
+		Message: message,
+	})
+}

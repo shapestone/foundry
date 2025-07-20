@@ -1,0 +1,214 @@
+# Multi-stage Dockerfile for {{.CustomVariables.service_name | title}} Service
+# Optimized for production deployment with minimal attack surface
+
+# Build stage
+FROM golang:1.22-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    tzdata \
+    protobuf \
+    protobuf-dev
+
+# Set working directory
+WORKDIR /build
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build arguments
+ARG VERSION=dev
+ARG BUILD_TIME=unknown
+ARG GIT_COMMIT=none
+ARG SERVICE_NAME={{.CustomVariables.service_name | default "user"}}
+
+# Build the service binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-w -s -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.gitCommit=${GIT_COMMIT}" \
+    -a -installsuffix cgo \
+    -o bin/${SERVICE_NAME} \
+    ./services/${SERVICE_NAME}
+
+# Runtime stage
+FROM alpine:3.18 AS runtime
+
+# Install runtime dependencies
+RUN apk --no-cache add \
+    ca-certificates \
+    tzdata \
+    curl \
+    && addgroup -g 1001 -S appgroup \
+    && adduser -u 1001 -S appuser -G appgroup
+
+# Set working directory
+WORKDIR /app
+
+# Copy binary from builder stage
+ARG SERVICE_NAME={{.CustomVariables.service_name | default "user"}}
+COPY --from=builder /build/bin/${SERVICE_NAME} ./service
+
+# Copy any additional files needed at runtime
+COPY --from=builder /build/tools/migrations ./migrations
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Create directories for logs and data
+RUN mkdir -p /app/logs /app/data \
+    && chown -R appuser:appgroup /app
+
+# Switch to non-root user
+USER appuser
+
+# Expose ports
+EXPOSE {{.CustomVariables.grpc_port | default "9090"}} {{.CustomVariables.http_port | default "8080"}} {{.CustomVariables.metrics_port | default "2112"}}
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:{{.CustomVariables.http_port | default "8080"}}/health || exit 1
+
+# Set environment variables
+ENV SERVICE_NAME={{.CustomVariables.service_name | default "user"}} \
+    GRPC_PORT={{.CustomVariables.grpc_port | default "9090"}} \
+    HTTP_PORT={{.CustomVariables.http_port | default "8080"}} \
+    METRICS_PORT={{.CustomVariables.metrics_port | default "2112"}} \
+    LOG_LEVEL=info \
+    LOG_FORMAT=json
+
+# Run the service
+ENTRYPOINT ["./service"]
+
+# Development stage (for local development with hot reload)
+FROM golang:1.22-alpine AS development
+
+# Install development dependencies
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    tzdata \
+    protobuf \
+    protobuf-dev \
+    make \
+    curl \
+    && go install github.com/cosmtrek/air@latest \
+    && go install github.com/golang/mock/mockgen@latest \
+    && go install github.com/bufbuild/buf/cmd/buf@latest
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Expose ports
+EXPOSE {{.CustomVariables.grpc_port | default "9090"}} {{.CustomVariables.http_port | default "8080"}} {{.CustomVariables.metrics_port | default "2112"}}
+
+# Create air config for live reload
+RUN echo '[build]\n\
+  cmd = "go build -o ./tmp/main ./services/{{.CustomVariables.service_name | default "user"}}"\n\
+  bin = "tmp/main"\n\
+  full_bin = "tmp/main"\n\
+  include_ext = ["go", "tpl", "tmpl", "html"]\n\
+  exclude_dir = ["assets", "tmp", "vendor", "node_modules"]\n\
+  include_dir = []\n\
+  exclude_file = []\n\
+  log = "build-errors.log"\n\
+  delay = 1000\n\
+  stop_on_error = true\n\
+  send_interrupt = false\n\
+  kill_delay = 500\n\
+[color]\n\
+  main = "magenta"\n\
+  watcher = "cyan"\n\
+  build = "yellow"\n\
+  runner = "green"\n\
+[misc]\n\
+  clean_on_exit = true' > .air.toml
+
+# Development command with live reload
+CMD ["air", "-c", ".air.toml"]
+
+# Testing stage (for running tests in CI/CD)
+FROM golang:1.22-alpine AS testing
+
+# Install test dependencies
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    tzdata \
+    protobuf \
+    protobuf-dev \
+    make \
+    curl \
+    postgresql-client \
+    && go install github.com/golang/mock/mockgen@latest \
+    && go install github.com/bufbuild/buf/cmd/buf@latest
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Generate code and run tests
+RUN make proto-gen && \
+    make mocks && \
+    go test -v -race -coverprofile=coverage.out ./... && \
+    go tool cover -html=coverage.out -o coverage.html
+
+# Production distroless image (alternative minimal runtime)
+FROM gcr.io/distroless/static-debian11:nonroot AS distroless
+
+# Copy binary from builder stage
+ARG SERVICE_NAME={{.CustomVariables.service_name | default "user"}}
+COPY --from=builder /build/bin/${SERVICE_NAME} /service
+
+# Copy certificates
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Expose ports
+EXPOSE {{.CustomVariables.grpc_port | default "9090"}} {{.CustomVariables.http_port | default "8080"}} {{.CustomVariables.metrics_port | default "2112"}}
+
+# Set user
+USER nonroot:nonroot
+
+# Run the service
+ENTRYPOINT ["/service"]
+
+# Security scanning stage (for vulnerability assessment)
+FROM alpine:3.18 AS security
+
+# Install security scanning tools
+RUN apk add --no-cache \
+    ca-certificates \
+    curl \
+    && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+# Copy binary for scanning
+ARG SERVICE_NAME={{.CustomVariables.service_name | default "user"}}
+COPY --from=builder /build/bin/${SERVICE_NAME} ./service
+
+# Run security scan
+RUN trivy fs --security-checks vuln,config,secret --format table .
+
+# Final stage selection based on build target
+# Default to runtime stage for production builds
+FROM runtime AS final

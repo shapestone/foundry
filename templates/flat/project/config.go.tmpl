@@ -1,0 +1,44 @@
+package main
+
+import (
+	"os"
+)
+
+// Config holds all application configuration
+type Config struct {
+	Port     string
+	Database DatabaseConfig
+	Debug    bool
+}
+
+// LoadConfig loads configuration from environment variables
+func LoadConfig() *Config {
+	config := &Config{
+		Port:  getEnv("PORT", "8080"),
+		Debug: getEnv("DEBUG", "false") == "true",
+		Database: DatabaseConfig{
+			Host:     getEnv("DB_HOST", "localhost"),
+			Port:     getEnv("DB_PORT", "5432"),
+			User:     getEnv("DB_USER", "postgres"),
+			Password: getEnv("DB_PASSWORD", ""),
+			Name:     getEnv("DB_NAME", "{{.ProjectName}}"),
+			SSLMode:  getEnv("DB_SSLMODE", "disable"),
+		},
+	}
+
+	return config
+}
+
+// getEnv gets an environment variable with a default value
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+// Validate validates the configuration
+func (c *Config) Validate() error {
+	// Add configuration validation logic here
+	return nil
+}

@@ -1,15 +1,17 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
+	"os/exec" // <-- ADD THIS IMPORT
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/shapestone/foundry/internal/layout"
 	"github.com/spf13/cobra"
 )
 
@@ -63,7 +65,6 @@ Use 'foundry new' if you want to create a new directory for your project.`,
 	cmd.Flags().StringP("license", "", "MIT", "Project license")
 	cmd.Flags().StringP("description", "d", "", "Project description")
 	cmd.Flags().StringP("github", "g", "", "GitHub username")
-	cmd.Flags().StringP("vars", "", "", "Comma-separated layout variables (key=value)")
 	cmd.Flags().BoolP("force", "f", false, "Overwrite existing files")
 	cmd.Flags().Bool("no-git", false, "Skip git initialization")
 
@@ -102,7 +103,6 @@ func runInit(cmd *cobra.Command, args []string, adapter *CLIAdapter) error {
 	license, _ := cmd.Flags().GetString("license")
 	description, _ := cmd.Flags().GetString("description")
 	githubUsername, _ := cmd.Flags().GetString("github")
-	varsStr, _ := cmd.Flags().GetString("vars")
 	force, _ := cmd.Flags().GetBool("force")
 	noGit, _ := cmd.Flags().GetBool("no-git")
 
@@ -118,18 +118,6 @@ func runInit(cmd *cobra.Command, args []string, adapter *CLIAdapter) error {
 	// Default description
 	if description == "" {
 		description = fmt.Sprintf("A Go project created with Foundry using the %s layout", layoutName)
-	}
-
-	// Parse custom variables
-	customVars := make(map[string]string)
-	if varsStr != "" {
-		pairs := strings.Split(varsStr, ",")
-		for _, pair := range pairs {
-			parts := strings.SplitN(pair, "=", 2)
-			if len(parts) == 2 {
-				customVars[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
-			}
-		}
 	}
 
 	// Enhanced safety check with clearer messaging
@@ -160,7 +148,7 @@ func runInit(cmd *cobra.Command, args []string, adapter *CLIAdapter) error {
 		GitHubUsername:  githubUsername,
 		GoVersion:       "1.21",
 		Year:            time.Now().Year(),
-		CustomVariables: customVars,
+		CustomVariables: make(map[string]string),
 	}
 
 	// Clear initialization message showing current location
@@ -187,11 +175,6 @@ func runInit(cmd *cobra.Command, args []string, adapter *CLIAdapter) error {
 		}
 	}
 
-	// Save project configuration
-	if err := saveProjectConfig(layoutName); err != nil {
-		fmt.Fprintf(stderr, "Warning: failed to save project configuration: %v\n", err)
-	}
-
 	// Enhanced success message with clear location info
 	fmt.Fprintln(stdout, "")
 	fmt.Fprintf(stdout, "✨ Project '%s' initialized successfully!\n", projectName)
@@ -209,6 +192,45 @@ func runInit(cmd *cobra.Command, args []string, adapter *CLIAdapter) error {
 	fmt.Fprintln(stdout, "")
 	fmt.Fprintln(stdout, "💡 Tip: Use 'foundry new <name>' next time to create a new directory")
 
+	return nil
+}
+
+// generateProject creates the project structure using the layout system
+func generateProject(layoutName, targetDir string, data ProjectData, stdout, stderr io.Writer) error {
+	// Get layout manager config path
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+	configPath := filepath.Join(homeDir, ".foundry", "layouts.yaml")
+
+	// Create layout manager
+	manager, err := layout.NewManager(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to create layout manager: %w", err)
+	}
+
+	// Convert ProjectData to layout.ProjectData
+	layoutData := layout.ProjectData{
+		ProjectName:     data.ProjectName,
+		ModuleName:      data.ModuleName,
+		Author:          data.Author,
+		License:         data.License,
+		Description:     data.Description,
+		GitHubUsername:  data.GitHubUsername,
+		Year:            data.Year,
+		GoVersion:       data.GoVersion,
+		CustomVariables: data.CustomVariables,
+	}
+
+	// Generate project using layout system
+	ctx := context.Background()
+	err = manager.GenerateProject(ctx, layoutName, targetDir, layoutData)
+	if err != nil {
+		return fmt.Errorf("layout generation failed: %w", err)
+	}
+
+	fmt.Fprintf(stdout, "✓ Generated project using '%s' layout\n", layoutName)
 	return nil
 }
 
@@ -262,174 +284,4 @@ func createInitialCommit() error {
 
 	// Create initial commit
 	return exec.Command("git", "commit", "-m", "Initial commit").Run()
-}
-
-// saveProjectConfig saves project configuration to .foundry.yaml
-func saveProjectConfig(layout string) error {
-	config := fmt.Sprintf("layout: %s\n", layout)
-	return os.WriteFile(".foundry.yaml", []byte(config), 0644)
-}
-
-// generateProject creates the project structure based on layout
-func generateProject(layoutName, targetDir string, data ProjectData, stdout, stderr io.Writer) error {
-	// For now, create a basic Go project structure
-	// TODO: Implement full layout system with templates
-
-	if err := createBasicProjectStructure(targetDir, data); err != nil {
-		return fmt.Errorf("creating project structure: %w", err)
-	}
-
-	fmt.Fprintf(stdout, "✓ Created project structure\n")
-	return nil
-}
-
-// createBasicProjectStructure creates a minimal Go project
-func createBasicProjectStructure(targetDir string, data ProjectData) error {
-	// Create directories
-	dirs := []string{
-		"cmd/" + data.ProjectName,
-		"internal",
-		"pkg",
-		"api",
-		"configs",
-		"scripts",
-		"test",
-		"docs",
-	}
-
-	for _, dir := range dirs {
-		if err := os.MkdirAll(filepath.Join(targetDir, dir), 0755); err != nil {
-			return err
-		}
-	}
-
-	// Create go.mod
-	goMod := fmt.Sprintf(`module %s
-
-go %s
-
-require (
-	github.com/spf13/cobra v1.8.0
-)
-`, data.ModuleName, data.GoVersion)
-
-	if err := os.WriteFile(filepath.Join(targetDir, "go.mod"), []byte(goMod), 0644); err != nil {
-		return err
-	}
-
-	// Create main.go
-	mainGo := fmt.Sprintf(`package main
-
-import (
-	"fmt"
-	"log"
-
-	"github.com/spf13/cobra"
-)
-
-var rootCmd = &cobra.Command{
-	Use:   "%s",
-	Short: "%s",
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Hello from %s!")
-	},
-}
-
-func main() {
-	if err := rootCmd.Execute(); err != nil {
-		log.Fatal(err)
-	}
-}
-`, data.ProjectName, data.Description, data.ProjectName)
-
-	mainPath := filepath.Join(targetDir, "cmd", data.ProjectName, "main.go")
-	if err := os.WriteFile(mainPath, []byte(mainGo), 0644); err != nil {
-		return err
-	}
-
-	// Create README.md
-	readme := fmt.Sprintf(`# %s
-
-%s
-
-## Getting Started
-
-### Prerequisites
-
-- Go %s or later
-
-### Installation
-
-`+"```bash"+`
-go mod tidy
-`+"```"+`
-
-### Usage
-
-`+"```bash"+`
-go run ./cmd/%s
-`+"```"+`
-
-### Building
-
-`+"```bash"+`
-go build -o %s ./cmd/%s
-./%s
-`+"```"+`
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the %s License - see the LICENSE file for details.
-`, data.ProjectName, data.Description, data.GoVersion, data.ProjectName, data.ProjectName, data.ProjectName, data.ProjectName, data.License)
-
-	if err := os.WriteFile(filepath.Join(targetDir, "README.md"), []byte(readme), 0644); err != nil {
-		return err
-	}
-
-	// Create .gitignore
-	gitignore := `# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Test binary, built with go test -c
-*.test
-
-# Output of the go coverage tool
-*.out
-
-# Dependency directories
-vendor/
-
-# Go workspace file
-go.work
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Project specific
-/tmp/
-/logs/
-/dist/
-`
-
-	return os.WriteFile(filepath.Join(targetDir, ".gitignore"), []byte(gitignore), 0644)
 }

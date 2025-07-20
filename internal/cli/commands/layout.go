@@ -416,7 +416,7 @@ func getAvailableLayouts() []LayoutListEntry {
 		{
 			Name:        "hexagonal",
 			Version:     "1.1.0",
-			Description: "Hexagonal architecture with domain-driven design",
+			Description: "hexagonal architecture with domain-driven design",
 			Source:      LayoutSource{Type: "github", Location: "user/hexagonal-layout"},
 			Installed:   false,
 		},

@@ -1,0 +1,277 @@
+# {{.ProjectName}}
+
+{{.Description | default "A Go web application built with Foundry CLI"}}
+
+## Quick Start
+
+### Prerequisites
+
+- Go {{.GoVersion | default "1.21"}} or later
+- Make (optional, for using Makefile commands)
+
+### Installation
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd {{.ProjectName | snake_case}}
+```
+
+2. Install dependencies:
+```bash
+go mod download
+```
+
+3. Copy environment configuration:
+```bash
+cp .env.example .env
+```
+
+4. Run the application:
+```bash
+go run main.go
+```
+
+The web server will start on port 8080 by default.
+Visit: http://localhost:8080
+
+### Using Make Commands
+
+```bash
+# Build the application
+make build
+
+# Run the application
+make run
+
+# Run with live reload (requires air)
+make dev
+
+# Run tests
+make test
+
+# Clean build artifacts
+make clean
+```
+
+## Features
+
+- 🌐 **Web Server** - HTML template rendering with Gorilla Mux
+- 🛡️ **Security** - CSRF protection and secure sessions
+- 📝 **Templates** - HTML template system with layout support
+- 📁 **Static Assets** - CSS, JavaScript, and image serving
+- 🔐 **Sessions** - Cookie-based session management
+- 📋 **Forms** - Form handling with validation
+- 🐳 **Docker** - Containerized deployment
+- 🔄 **Live Reload** - Development with automatic reloading
+
+## Project Structure
+
+```
+{{.ProjectName | snake_case}}/
+├── main.go                   # Application entry point
+├── templates/                # HTML templates
+│   ├── layout.html          # Base layout template
+│   ├── index.html           # Home page
+│   ├── about.html           # About page
+│   ├── contact.html         # Contact form
+│   └── 404.html             # Error page
+├── static/                  # Static assets
+│   ├── css/
+│   │   └── style.css        # Main stylesheet
+│   ├── js/
+│   │   └── app.js           # JavaScript functionality
+│   └── images/              # Image assets
+├── internal/                # Private application code
+│   ├── handlers/            # HTTP handlers
+│   ├── models/              # Data models
+│   ├── middleware/          # HTTP middleware
+│   └── services/            # Business logic
+├── docs/                    # Documentation
+├── scripts/                 # Build and deployment scripts
+├── go.mod
+├── go.sum
+├── Makefile
+├── Dockerfile
+├── docker-compose.yml
+├── .env.example
+├── .gitignore
+└── README.md
+```
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| PORT | Server port | 8080 |
+| SESSION_SECRET | Session encryption key | change-this-secret-key |
+| CSRF_KEY | CSRF protection key | 32-byte-long-auth-key |
+
+## Available Routes
+
+### Web Pages
+- `GET /` - Home page
+- `GET /about` - About page
+- `GET /contact` - Contact form
+- `POST /contact` - Contact form submission
+
+### API Endpoints
+- `GET /api/v1/health` - Health check endpoint
+- `GET /api/v1/example` - Example API endpoint
+
+### Static Assets
+- `/static/css/` - Stylesheets
+- `/static/js/` - JavaScript files
+- `/static/images/` - Images
+
+## Development
+
+### Adding New Pages
+
+1. Create HTML template in `templates/`:
+```html
+{{`{{define "content"}}`}}
+<h1>My New Page</h1>
+<p>Page content here</p>
+{{`{{end}}`}}
+
+{{`{{template "layout.html" .}}`}}
+```
+
+2. Add route handler in `main.go`:
+```go
+func myPageHandler(w http.ResponseWriter, r *http.Request) {
+    data := map[string]interface{}{
+        "Title": "My Page - {{.ProjectName}}",
+        "PageTitle": "My Page",
+        csrf.TemplateTag: csrf.TemplateField(r),
+    }
+    renderTemplate(w, "mypage.html", data)
+}
+```
+
+3. Register route:
+```go
+protected.HandleFunc("/mypage", myPageHandler).Methods("GET")
+```
+
+### Adding Components with Foundry
+
+Use Foundry CLI to generate new components:
+
+```bash
+# Generate a new page handler
+foundry add page_handler dashboard
+
+# Generate a new API handler
+foundry add api_handler users
+
+# Generate a new model
+foundry add model user
+
+# Generate middleware
+foundry add middleware auth
+
+# Generate a service
+foundry add service user
+```
+
+### Static Assets
+
+- Place CSS files in `static/css/`
+- Place JavaScript files in `static/js/`
+- Place images in `static/images/`
+
+Assets are served at `/static/` URL path.
+
+### Form Handling
+
+Forms automatically include CSRF protection. Use the CSRF template field:
+
+```html
+<form method="POST" action="/contact">
+    {{`{{.CSRFField}}`}}
+    <input type="text" name="name" required>
+    <button type="submit">Submit</button>
+</form>
+```
+
+### Sessions
+
+Access sessions in handlers:
+
+```go
+session, _ := store.Get(r, "session-name")
+session.Values["key"] = "value"
+session.Save(r, w)
+```
+
+## Docker Development
+
+```bash
+# Build and run with Docker Compose
+docker-compose up --build
+
+# Run in detached mode
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+```
+
+## Testing
+
+```bash
+# Run all tests
+go test ./...
+
+# Run tests with coverage
+go test -cover ./...
+
+# Run tests with verbose output
+go test -v ./...
+```
+
+## Deployment
+
+### Building for Production
+
+```bash
+# Build binary
+make build
+
+# Build Docker image
+docker build -t {{.ProjectName | snake_case}} .
+```
+
+### Production Environment
+
+Set these environment variables in production:
+
+```bash
+PORT=8080
+SESSION_SECRET=your-secure-random-session-key
+CSRF_KEY=your-32-byte-csrf-key
+```
+
+For HTTPS in production, update the session store and CSRF settings:
+
+```go
+store.Options.Secure = true
+csrf.Protect([]byte(csrfKey), csrf.Secure(true))
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

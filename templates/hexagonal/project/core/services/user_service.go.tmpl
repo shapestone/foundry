@@ -1,0 +1,155 @@
+package services
+
+import (
+	"context"
+	"fmt"
+
+	"{{if .github_username}}github.com/{{.github_username}}/{{end}}{{.project_name}}/internal/core/domain"
+	"{{if .github_username}}github.com/{{.github_username}}/{{end}}{{.project_name}}/internal/core/ports"
+)
+
+// userService implements the UserService port
+type userService struct {
+	userRepo ports.UserRepository
+}
+
+// NewUserService creates a new user service
+func NewUserService(userRepo ports.UserRepository) ports.UserService {
+	return &userService{
+		userRepo: userRepo,
+	}
+}
+
+// CreateUser creates a new user with validation
+func (s *userService) CreateUser(ctx context.Context, email, name string) (*domain.User, error) {
+	// Check if user already exists
+	existing, err := s.userRepo.GetByEmail(ctx, email)
+	if err == nil && existing != nil {
+		return nil, domain.ErrUserExists
+	}
+
+	// Generate ID (in real application, use UUID or database auto-increment)
+	id := generateUserID()
+
+	// Create domain entity
+	user, err := domain.NewUser(id, email, name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	// Store in repository
+	if err := s.userRepo.Create(ctx, user); err != nil {
+		return nil, fmt.Errorf("failed to store user: %w", err)
+	}
+
+	return user, nil
+}
+
+// GetUser retrieves a user by ID
+func (s *userService) GetUser(ctx context.Context, id string) (*domain.User, error) {
+	if id == "" {
+		return nil, domain.ErrInvalidUserID
+	}
+
+	user, err := s.userRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	return user, nil
+}
+
+// GetUserByEmail retrieves a user by email
+func (s *userService) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
+	if email == "" {
+		return nil, domain.ErrInvalidEmail
+	}
+
+	user, err := s.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user by email: %w", err)
+	}
+
+	return user, nil
+}
+
+// UpdateUser updates user information
+func (s *userService) UpdateUser(ctx context.Context, id string, name, email string) (*domain.User, error) {
+	// Get existing user
+	user, err := s.userRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// Update fields if provided
+	if name != "" {
+		if err := user.UpdateName(name); err != nil {
+			return nil, err
+		}
+	}
+
+	if email != "" {
+		// Check if email is already taken by another user
+		existing, err := s.userRepo.GetByEmail(ctx, email)
+		if err == nil && existing != nil && existing.ID != id {
+			return nil, domain.ErrUserExists
+		}
+
+		if err := user.UpdateEmail(email); err != nil {
+			return nil, err
+		}
+	}
+
+	// Save changes
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return nil, fmt.Errorf("failed to update user: %w", err)
+	}
+
+	return user, nil
+}
+
+// DeleteUser removes a user
+func (s *userService) DeleteUser(ctx context.Context, id string) error {
+	if id == "" {
+		return domain.ErrInvalidUserID
+	}
+
+	// Check if user exists
+	exists, err := s.userRepo.Exists(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to check user existence: %w", err)
+	}
+	if !exists {
+		return domain.ErrUserNotFound
+	}
+
+	// Delete user
+	if err := s.userRepo.Delete(ctx, id); err != nil {
+		return fmt.Errorf("failed to delete user: %w", err)
+	}
+
+	return nil
+}
+
+// ListUsers retrieves users with pagination
+func (s *userService) ListUsers(ctx context.Context, limit, offset int) ([]*domain.User, error) {
+	if limit <= 0 {
+		limit = 10 // default limit
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	users, err := s.userRepo.List(ctx, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list users: %w", err)
+	}
+
+	return users, nil
+}
+
+// generateUserID generates a unique ID for a user
+// In a real application, use UUID or let the database generate it
+func generateUserID() string {
+	return fmt.Sprintf("user_%d", len("placeholder"))
+}

@@ -1,0 +1,575 @@
+# Deployment configuration for {{.CustomVariables.service_name | title}} Service
+# This defines how the service is deployed and managed in Kubernetes
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    component: microservice
+    version: v1
+    project: {{.ProjectName | lower}}
+  annotations:
+    description: "{{.CustomVariables.service_name | title}} microservice deployment"
+    deployment.kubernetes.io/revision: "1"
+    # Flux CD annotations (if using GitOps)
+    fluxcd.io/automated: "true"
+    fluxcd.io/tag.{{.CustomVariables.service_name | default "user"}}: "glob:v*"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  selector:
+    matchLabels:
+      app: {{.CustomVariables.service_name | default "user"}}-service
+  template:
+    metadata:
+      labels:
+        app: {{.CustomVariables.service_name | default "user"}}-service
+        component: microservice
+        version: v1
+        project: {{.ProjectName | lower}}
+      annotations:
+        # Force pod restart on config/secret changes
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+
+        # Prometheus scraping
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{.CustomVariables.metrics_port | default "2112"}}"
+        prometheus.io/path: "/metrics"
+
+        # Service mesh annotations
+        {{- if eq (.CustomVariables.service_mesh | default "istio") "istio"}}
+        # Istio annotations
+        sidecar.istio.io/inject: "true"
+        traffic.sidecar.istio.io/includeInboundPorts: "{{.CustomVariables.grpc_port | default "9090"}},{{.CustomVariables.http_port | default "8080"}}"
+        traffic.sidecar.istio.io/excludeOutboundPorts: "{{.CustomVariables.metrics_port | default "2112"}}"
+        {{- else if eq (.CustomVariables.service_mesh | default "istio") "linkerd"}}
+        # Linkerd annotations
+        linkerd.io/inject: enabled
+        config.linkerd.io/skip-inbound-ports: "{{.CustomVariables.metrics_port | default "2112"}}"
+        {{- end}}
+
+    spec:
+      serviceAccountName: {{.CustomVariables.service_name | default "user"}}-service-account
+      automountServiceAccountToken: true
+
+      # Security context
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+
+      # DNS configuration
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "2"
+          - name: edns0
+
+      # Termination grace period
+      terminationGracePeriodSeconds: 30
+
+      # Image pull secrets
+      imagePullSecrets:
+        - name: {{.ProjectName | lower}}-registry-secret
+
+      # Init containers
+      initContainers:
+        # Database migration init container
+        - name: db-migrate
+          image: {{.CustomVariables.docker_registry | default "localhost:5000"}}/{{.ProjectName | lower}}-migrations:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Running database migrations..."
+              migrate -path /migrations -database "$DATABASE_URL" up
+              echo "Migrations completed"
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{.ProjectName | lower}}-secrets
+                  key: DATABASE_URL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1001
+            capabilities:
+              drop:
+                - ALL
+
+        # Wait for dependencies init container
+        - name: wait-for-dependencies
+          image: busybox:1.35
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for database..."
+              until nc -z postgres.database.svc.cluster.local 5432; do
+                echo "Database not ready, waiting..."
+                sleep 2
+              done
+              echo "Database is ready"
+
+              echo "Waiting for cache..."
+              until nc -z redis.cache.svc.cluster.local 6379; do
+                echo "Cache not ready, waiting..."
+                sleep 2
+              done
+              echo "Cache is ready"
+
+              {{- if eq (.CustomVariables.message_broker | default "nats") "nats"}}
+              echo "Waiting for NATS..."
+              until nc -z nats.messaging.svc.cluster.local 4222; do
+                echo "NATS not ready, waiting..."
+                sleep 2
+              done
+              echo "NATS is ready"
+              {{- else if eq (.CustomVariables.message_broker | default "nats") "kafka"}}
+              echo "Waiting for Kafka..."
+              until nc -z kafka.messaging.svc.cluster.local 9092; do
+                echo "Kafka not ready, waiting..."
+                sleep 2
+              done
+              echo "Kafka is ready"
+              {{- else if eq (.CustomVariables.message_broker | default "nats") "rabbitmq"}}
+              echo "Waiting for RabbitMQ..."
+              until nc -z rabbitmq.messaging.svc.cluster.local 5672; do
+                echo "RabbitMQ not ready, waiting..."
+                sleep 2
+              done
+              echo "RabbitMQ is ready"
+              {{- end}}
+
+              echo "All dependencies are ready"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1001
+            capabilities:
+              drop:
+                - ALL
+
+      containers:
+        # Main application container
+        - name: {{.CustomVariables.service_name | default "user"}}-service
+          image: {{.CustomVariables.docker_registry | default "localhost:5000"}}/{{.CustomVariables.service_name | default "user"}}-service:latest
+          imagePullPolicy: IfNotPresent
+
+          # Ports
+          ports:
+            - name: grpc
+              containerPort: {{.CustomVariables.grpc_port | default "9090"}}
+              protocol: TCP
+            - name: http
+              containerPort: {{.CustomVariables.http_port | default "8080"}}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{.CustomVariables.metrics_port | default "2112"}}
+              protocol: TCP
+
+          # Environment variables
+          env:
+            # Service configuration
+            - name: SERVICE_NAME
+              value: "{{.CustomVariables.service_name | default "user"}}"
+            - name: KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: KUBERNETES_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: KUBERNETES_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: KUBERNETES_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+
+          # Environment from ConfigMaps and Secrets
+          envFrom:
+            - configMapRef:
+                name: {{.ProjectName | lower}}-config
+            - configMapRef:
+                name: {{.CustomVariables.service_name | default "user"}}-service-config
+            - secretRef:
+                name: {{.ProjectName | lower}}-secrets
+            {{- if eq (.CustomVariables.environment | default "development") "development"}}
+            - configMapRef:
+                name: {{.ProjectName | lower}}-config-dev
+                optional: true
+            - secretRef:
+                name: {{.ProjectName | lower}}-dev-secrets
+                optional: true
+            {{- else if eq (.CustomVariables.environment | default "development") "staging"}}
+            - configMapRef:
+                name: {{.ProjectName | lower}}-config-staging
+                optional: true
+            - secretRef:
+                name: {{.ProjectName | lower}}-staging-secrets
+                optional: true
+            {{- else if eq (.CustomVariables.environment | default "development") "production"}}
+            - configMapRef:
+                name: {{.ProjectName | lower}}-config-prod
+                optional: true
+            - secretRef:
+                name: {{.ProjectName | lower}}-prod-secrets
+                optional: true
+            {{- end}}
+
+          # Resource limits and requests
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+              ephemeral-storage: 1Gi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+              ephemeral-storage: 2Gi
+
+          # Security context
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+            capabilities:
+              drop:
+                - ALL
+
+          # Health checks
+          livenessProbe:
+            grpc:
+              port: {{.CustomVariables.grpc_port | default "9090"}}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 30
+            successThreshold: 1
+
+          # Volume mounts
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: var-run
+              mountPath: /var/run
+            - name: config-volume
+              mountPath: /app/config
+              readOnly: true
+            - name: tls-certs
+              mountPath: /etc/ssl/certs
+              readOnly: true
+            - name: ca-certs
+              mountPath: /etc/ssl/ca-certs
+              readOnly: true
+
+          # Lifecycle hooks
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    echo "Graceful shutdown initiated"
+                    kill -TERM 1
+                    sleep 15
+
+        # Sidecar container for log aggregation (optional)
+        - name: log-aggregator
+          image: fluent/fluent-bit:2.1.9
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: FLUENT_CONF
+              value: fluent-bit.conf
+            - name: FLUENT_OPT
+              value: ""
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1001
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: fluent-bit-config
+              mountPath: /fluent-bit/etc
+            - name: var-log
+              mountPath: /var/log
+              readOnly: true
+
+      # Volumes
+      volumes:
+        # Temporary directories
+        - name: tmp
+          emptyDir: {}
+        - name: var-run
+          emptyDir: {}
+        - name: var-log
+          emptyDir: {}
+
+        # Configuration
+        - name: config-volume
+          configMap:
+            name: {{.CustomVariables.service_name | default "user"}}-service-config
+
+        # TLS certificates
+        - name: tls-certs
+          secret:
+            secretName: {{.ProjectName | lower}}-tls-certs
+            defaultMode: 0400
+
+        # CA certificates
+        - name: ca-certs
+          secret:
+            secretName: {{.ProjectName | lower}}-ca-certs
+            defaultMode: 0400
+
+        # Fluent Bit configuration
+        - name: fluent-bit-config
+          configMap:
+            name: fluent-bit-config
+            optional: true
+
+      # Node selection
+      nodeSelector:
+        kubernetes.io/arch: amd64
+        node.kubernetes.io/instance-type: "t3.medium"
+
+      # Affinity rules
+      affinity:
+        # Pod anti-affinity to spread pods across nodes
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - {{.CustomVariables.service_name | default "user"}}-service
+                topologyKey: kubernetes.io/hostname
+            - weight: 50
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - {{.CustomVariables.service_name | default "user"}}-service
+                topologyKey: topology.kubernetes.io/zone
+
+        # Node affinity for preferred node types
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node.kubernetes.io/instance-type
+                    operator: In
+                    values:
+                      - t3.medium
+                      - t3.large
+                      - m5.large
+
+      # Tolerations
+      tolerations:
+        - key: "app"
+          operator: "Equal"
+          value: "{{.ProjectName | lower}}"
+          effect: "NoSchedule"
+
+      # Priority class
+      priorityClassName: {{.ProjectName | lower}}-normal-priority
+
+      # Topology spread constraints
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: {{.CustomVariables.service_name | default "user"}}-service
+        - maxSkew: 2
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: {{.CustomVariables.service_name | default "user"}}-service
+
+---
+# Horizontal Pod Autoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service-hpa
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    component: autoscaling
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{.CustomVariables.service_name | default "user"}}-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    # CPU utilization
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+    # Memory utilization
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+    # Custom metrics (requests per second)
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "100"
+
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+      selectPolicy: Max
+
+---
+# Pod Disruption Budget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service-pdb
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    component: disruption-budget
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: {{.CustomVariables.service_name | default "user"}}-service
+
+---
+# Vertical Pod Autoscaler (if VPA is installed)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: {{.CustomVariables.service_name | default "user"}}-service-vpa
+  namespace: {{.CustomVariables.namespace | default "default"}}
+  labels:
+    app: {{.CustomVariables.service_name | default "user"}}-service
+    component: vertical-autoscaling
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{.CustomVariables.service_name | default "user"}}-service
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: {{.CustomVariables.service_name | default "user"}}-service
+        minAllowed:
+          cpu: 100m
+          memory: 128Mi
+        maxAllowed:
+          cpu: 1000m
+          memory: 1Gi
+        controlledResources: ["cpu", "memory"]

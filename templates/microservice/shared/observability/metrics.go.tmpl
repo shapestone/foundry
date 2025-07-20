@@ -1,0 +1,575 @@
+package observability
+
+import (
+	"fmt"
+	"strconv"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+// Metrics provides a centralized metrics collection interface
+type Metrics struct {
+	namespace string
+	subsystem string
+
+	// HTTP metrics
+	httpRequestsTotal    *prometheus.CounterVec
+	httpRequestDuration  *prometheus.HistogramVec
+	httpRequestSize      *prometheus.HistogramVec
+	httpResponseSize     *prometheus.HistogramVec
+
+	// gRPC metrics
+	grpcRequestsTotal    *prometheus.CounterVec
+	grpcRequestDuration  *prometheus.HistogramVec
+
+	// Database metrics
+	dbConnectionsTotal   *prometheus.GaugeVec
+	dbConnectionsIdle    *prometheus.GaugeVec
+	dbQueryDuration      *prometheus.HistogramVec
+	dbQueryTotal         *prometheus.CounterVec
+
+	// Cache metrics
+	cacheOperationsTotal *prometheus.CounterVec
+	cacheHitRatio        *prometheus.GaugeVec
+	cacheDuration        *prometheus.HistogramVec
+
+	// Message broker metrics
+	messagesPublishedTotal *prometheus.CounterVec
+	messagesConsumedTotal  *prometheus.CounterVec
+	messageProcessingDuration *prometheus.HistogramVec
+
+	// Circuit breaker metrics
+	circuitBreakerState    *prometheus.GaugeVec
+	circuitBreakerRequests *prometheus.CounterVec
+
+	// Business metrics
+	businessOperationsTotal *prometheus.CounterVec
+	businessOperationDuration *prometheus.HistogramVec
+
+	// System metrics
+	uptime              prometheus.Gauge
+	memoryUsage         prometheus.Gauge
+	goroutines          prometheus.Gauge
+
+	// Custom metrics registry
+	customCounters   map[string]*prometheus.CounterVec
+	customGauges     map[string]*prometheus.GaugeVec
+	customHistograms map[string]*prometheus.HistogramVec
+}
+
+// NewMetrics creates a new metrics instance
+func NewMetrics(serviceName string) *Metrics {
+	namespace := "{{.ProjectName | lower}}"
+	subsystem := serviceName
+
+	m := &Metrics{
+		namespace: namespace,
+		subsystem: subsystem,
+		customCounters:   make(map[string]*prometheus.CounterVec),
+		customGauges:     make(map[string]*prometheus.GaugeVec),
+		customHistograms: make(map[string]*prometheus.HistogramVec),
+	}
+
+	m.initHTTPMetrics()
+	m.initGRPCMetrics()
+	m.initDatabaseMetrics()
+	m.initCacheMetrics()
+	m.initMessageBrokerMetrics()
+	m.initCircuitBreakerMetrics()
+	m.initBusinessMetrics()
+	m.initSystemMetrics()
+
+	return m
+}
+
+// initHTTPMetrics initializes HTTP-related metrics
+func (m *Metrics) initHTTPMetrics() {
+	m.httpRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "http_requests_total",
+			Help:      "Total number of HTTP requests",
+		},
+		[]string{"method", "endpoint", "status_code"},
+	)
+
+	m.httpRequestDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "http_request_duration_seconds",
+			Help:      "HTTP request duration in seconds",
+			Buckets:   prometheus.DefBuckets,
+		},
+		[]string{"method", "endpoint", "status_code"},
+	)
+
+	m.httpRequestSize = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "http_request_size_bytes",
+			Help:      "HTTP request size in bytes",
+			Buckets:   prometheus.ExponentialBuckets(100, 10, 8),
+		},
+		[]string{"method", "endpoint"},
+	)
+
+	m.httpResponseSize = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "http_response_size_bytes",
+			Help:      "HTTP response size in bytes",
+			Buckets:   prometheus.ExponentialBuckets(100, 10, 8),
+		},
+		[]string{"method", "endpoint", "status_code"},
+	)
+}
+
+// initGRPCMetrics initializes gRPC-related metrics
+func (m *Metrics) initGRPCMetrics() {
+	m.grpcRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "grpc_requests_total",
+			Help:      "Total number of gRPC requests",
+		},
+		[]string{"method", "code"},
+	)
+
+	m.grpcRequestDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "grpc_request_duration_seconds",
+			Help:      "gRPC request duration in seconds",
+			Buckets:   prometheus.DefBuckets,
+		},
+		[]string{"method", "code"},
+	)
+}
+
+// initDatabaseMetrics initializes database-related metrics
+func (m *Metrics) initDatabaseMetrics() {
+	m.dbConnectionsTotal = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "db_connections_total",
+			Help:      "Total number of database connections",
+		},
+		[]string{"database", "state"},
+	)
+
+	m.dbConnectionsIdle = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "db_connections_idle",
+			Help:      "Number of idle database connections",
+		},
+		[]string{"database"},
+	)
+
+	m.dbQueryDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "db_query_duration_seconds",
+			Help:      "Database query duration in seconds",
+			Buckets:   []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0},
+		},
+		[]string{"database", "operation", "table"},
+	)
+
+	m.dbQueryTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "db_queries_total",
+			Help:      "Total number of database queries",
+		},
+		[]string{"database", "operation", "table", "status"},
+	)
+}
+
+// initCacheMetrics initializes cache-related metrics
+func (m *Metrics) initCacheMetrics() {
+	m.cacheOperationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "cache_operations_total",
+			Help:      "Total number of cache operations",
+		},
+		[]string{"operation", "result"},
+	)
+
+	m.cacheHitRatio = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "cache_hit_ratio",
+			Help:      "Cache hit ratio",
+		},
+		[]string{"cache_name"},
+	)
+
+	m.cacheDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "cache_operation_duration_seconds",
+			Help:      "Cache operation duration in seconds",
+			Buckets:   []float64{0.0001, 0.001, 0.01, 0.1, 1.0},
+		},
+		[]string{"operation"},
+	)
+}
+
+// initMessageBrokerMetrics initializes message broker metrics
+func (m *Metrics) initMessageBrokerMetrics() {
+	m.messagesPublishedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "messages_published_total",
+			Help:      "Total number of messages published",
+		},
+		[]string{"topic", "status"},
+	)
+
+	m.messagesConsumedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "messages_consumed_total",
+			Help:      "Total number of messages consumed",
+		},
+		[]string{"topic", "status"},
+	)
+
+	m.messageProcessingDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "message_processing_duration_seconds",
+			Help:      "Message processing duration in seconds",
+			Buckets:   prometheus.DefBuckets,
+		},
+		[]string{"topic", "handler"},
+	)
+}
+
+// initCircuitBreakerMetrics initializes circuit breaker metrics
+func (m *Metrics) initCircuitBreakerMetrics() {
+	m.circuitBreakerState = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "circuit_breaker_state",
+			Help:      "Circuit breaker state (0=closed, 1=open, 2=half-open)",
+		},
+		[]string{"name"},
+	)
+
+	m.circuitBreakerRequests = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "circuit_breaker_requests_total",
+			Help:      "Total number of circuit breaker requests",
+		},
+		[]string{"name", "state", "result"},
+	)
+}
+
+// initBusinessMetrics initializes business-specific metrics
+func (m *Metrics) initBusinessMetrics() {
+	m.businessOperationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "business_operations_total",
+			Help:      "Total number of business operations",
+		},
+		[]string{"operation", "status"},
+	)
+
+	m.businessOperationDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "business_operation_duration_seconds",
+			Help:      "Business operation duration in seconds",
+			Buckets:   prometheus.DefBuckets,
+		},
+		[]string{"operation"},
+	)
+}
+
+// initSystemMetrics initializes system-level metrics
+func (m *Metrics) initSystemMetrics() {
+	m.uptime = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "uptime_seconds",
+			Help:      "Service uptime in seconds",
+		},
+	)
+
+	m.memoryUsage = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "memory_usage_bytes",
+			Help:      "Memory usage in bytes",
+		},
+	)
+
+	m.goroutines = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      "goroutines_total",
+			Help:      "Number of goroutines",
+		},
+	)
+}
+
+// HTTP Metrics Methods
+
+// RecordHTTPRequest records HTTP request metrics
+func (m *Metrics) RecordHTTPRequest(method, endpoint string, statusCode int, duration time.Duration, requestSize, responseSize int64) {
+	statusStr := strconv.Itoa(statusCode)
+
+	m.httpRequestsTotal.WithLabelValues(method, endpoint, statusStr).Inc()
+	m.httpRequestDuration.WithLabelValues(method, endpoint, statusStr).Observe(duration.Seconds())
+	m.httpRequestSize.WithLabelValues(method, endpoint).Observe(float64(requestSize))
+	m.httpResponseSize.WithLabelValues(method, endpoint, statusStr).Observe(float64(responseSize))
+}
+
+// gRPC Metrics Methods
+
+// RecordGRPCRequest records gRPC request metrics
+func (m *Metrics) RecordGRPCRequest(method, code string, duration time.Duration) {
+	m.grpcRequestsTotal.WithLabelValues(method, code).Inc()
+	m.grpcRequestDuration.WithLabelValues(method, code).Observe(duration.Seconds())
+}
+
+// Database Metrics Methods
+
+// SetDatabaseConnections sets database connection metrics
+func (m *Metrics) SetDatabaseConnections(database string, total, idle int) {
+	m.dbConnectionsTotal.WithLabelValues(database, "total").Set(float64(total))
+	m.dbConnectionsTotal.WithLabelValues(database, "idle").Set(float64(idle))
+	m.dbConnectionsTotal.WithLabelValues(database, "in_use").Set(float64(total - idle))
+}
+
+// RecordDatabaseQuery records database query metrics
+func (m *Metrics) RecordDatabaseQuery(database, operation, table string, duration time.Duration, success bool) {
+	status := "success"
+	if !success {
+		status = "error"
+	}
+
+	m.dbQueryTotal.WithLabelValues(database, operation, table, status).Inc()
+	m.dbQueryDuration.WithLabelValues(database, operation, table).Observe(duration.Seconds())
+}
+
+// Cache Metrics Methods
+
+// RecordCacheOperation records cache operation metrics
+func (m *Metrics) RecordCacheOperation(operation string, hit bool, duration time.Duration) {
+	result := "miss"
+	if hit {
+		result = "hit"
+	}
+
+	m.cacheOperationsTotal.WithLabelValues(operation, result).Inc()
+	m.cacheDuration.WithLabelValues(operation).Observe(duration.Seconds())
+}
+
+// SetCacheHitRatio sets cache hit ratio
+func (m *Metrics) SetCacheHitRatio(cacheName string, ratio float64) {
+	m.cacheHitRatio.WithLabelValues(cacheName).Set(ratio)
+}
+
+// Message Broker Metrics Methods
+
+// RecordMessagePublished records message publishing metrics
+func (m *Metrics) RecordMessagePublished(topic string, success bool) {
+	status := "success"
+	if !success {
+		status = "error"
+	}
+
+	m.messagesPublishedTotal.WithLabelValues(topic, status).Inc()
+}
+
+// RecordMessageConsumed records message consumption metrics
+func (m *Metrics) RecordMessageConsumed(topic string, success bool) {
+	status := "success"
+	if !success {
+		status = "error"
+	}
+
+	m.messagesConsumedTotal.WithLabelValues(topic, status).Inc()
+}
+
+// RecordMessageProcessing records message processing duration
+func (m *Metrics) RecordMessageProcessing(topic, handler string, duration time.Duration) {
+	m.messageProcessingDuration.WithLabelValues(topic, handler).Observe(duration.Seconds())
+}
+
+// Circuit Breaker Metrics Methods
+
+// SetCircuitBreakerState sets circuit breaker state
+func (m *Metrics) SetCircuitBreakerState(name string, state int) {
+	m.circuitBreakerState.WithLabelValues(name).Set(float64(state))
+}
+
+// RecordCircuitBreakerRequest records circuit breaker request
+func (m *Metrics) RecordCircuitBreakerRequest(name, state, result string) {
+	m.circuitBreakerRequests.WithLabelValues(name, state, result).Inc()
+}
+
+// Business Metrics Methods
+
+// RecordBusinessOperation records business operation metrics
+func (m *Metrics) RecordBusinessOperation(operation string, duration time.Duration, success bool) {
+	status := "success"
+	if !success {
+		status = "error"
+	}
+
+	m.businessOperationsTotal.WithLabelValues(operation, status).Inc()
+	m.businessOperationDuration.WithLabelValues(operation).Observe(duration.Seconds())
+}
+
+// System Metrics Methods
+
+// SetUptime sets service uptime
+func (m *Metrics) SetUptime(uptime time.Duration) {
+	m.uptime.Set(uptime.Seconds())
+}
+
+// SetMemoryUsage sets memory usage
+func (m *Metrics) SetMemoryUsage(bytes int64) {
+	m.memoryUsage.Set(float64(bytes))
+}
+
+// SetGoroutines sets number of goroutines
+func (m *Metrics) SetGoroutines(count int) {
+	m.goroutines.Set(float64(count))
+}
+
+// Custom Metrics Methods
+
+// IncrementCounter increments a custom counter
+func (m *Metrics) IncrementCounter(name string, labels map[string]string) {
+	counter := m.getOrCreateCounter(name, getKeys(labels))
+	counter.WithLabelValues(getValues(labels, getKeys(labels))...).Inc()
+}
+
+// IncrementCounterBy increments a custom counter by a specific value
+func (m *Metrics) IncrementCounterBy(name string, value float64, labels map[string]string) {
+	counter := m.getOrCreateCounter(name, getKeys(labels))
+	counter.WithLabelValues(getValues(labels, getKeys(labels))...).Add(value)
+}
+
+// SetGauge sets a custom gauge value
+func (m *Metrics) SetGauge(name string, value float64, labels map[string]string) {
+	gauge := m.getOrCreateGauge(name, getKeys(labels))
+	gauge.WithLabelValues(getValues(labels, getKeys(labels))...).Set(value)
+}
+
+// RecordHistogram records a value in a custom histogram
+func (m *Metrics) RecordHistogram(name string, value float64, labels map[string]string) {
+	histogram := m.getOrCreateHistogram(name, getKeys(labels))
+	histogram.WithLabelValues(getValues(labels, getKeys(labels))...).Observe(value)
+}
+
+// Helper methods for custom metrics
+
+func (m *Metrics) getOrCreateCounter(name string, labelNames []string) *prometheus.CounterVec {
+	if counter, exists := m.customCounters[name]; exists {
+		return counter
+	}
+
+	counter := promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      name,
+			Help:      fmt.Sprintf("Custom counter: %s", name),
+		},
+		labelNames,
+	)
+
+	m.customCounters[name] = counter
+	return counter
+}
+
+func (m *Metrics) getOrCreateGauge(name string, labelNames []string) *prometheus.GaugeVec {
+	if gauge, exists := m.customGauges[name]; exists {
+		return gauge
+	}
+
+	gauge := promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      name,
+			Help:      fmt.Sprintf("Custom gauge: %s", name),
+		},
+		labelNames,
+	)
+
+	m.customGauges[name] = gauge
+	return gauge
+}
+
+func (m *Metrics) getOrCreateHistogram(name string, labelNames []string) *prometheus.HistogramVec {
+	if histogram, exists := m.customHistograms[name]; exists {
+		return histogram
+	}
+
+	histogram := promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: m.namespace,
+			Subsystem: m.subsystem,
+			Name:      name,
+			Help:      fmt.Sprintf("Custom histogram: %s", name),
+			Buckets:   prometheus.DefBuckets,
+		},
+		labelNames,
+	)
+
+	m.customHistograms[name] = histogram
+	return histogram
+}
+
+// Utility functions
+
+func getKeys(labels map[string]string) []string {
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func getValues(labels map[string]string, keys []string) []string {
+	values := make([]string, len(keys))
+	for i, key := range keys {
+		values[i] = labels[key]
+	}
+	return values
+}

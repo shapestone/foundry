@@ -1,0 +1,411 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/kelseyhightower/envconfig"
+)
+
+// Config holds all configuration for the microservice
+type Config struct {
+	// Environment (development, staging, production)
+	Environment string `envconfig:"ENVIRONMENT" default:"development"`
+
+	// Service configuration
+	Service ServiceConfig `envconfig:"SERVICE"`
+
+	// Server configuration
+	Server ServerConfig `envconfig:"SERVER"`
+
+	// Database configuration
+	Database DatabaseConfig `envconfig:"DATABASE"`
+
+	// Redis configuration
+	Redis RedisConfig `envconfig:"REDIS"`
+
+	// Message broker configuration
+	MessageBroker MessageBrokerConfig `envconfig:"MESSAGE_BROKER"`
+
+	// Observability configuration
+	Observability ObservabilityConfig `envconfig:"OBSERVABILITY"`
+
+	// Security configuration
+	Security SecurityConfig `envconfig:"SECURITY"`
+
+	// CORS configuration
+	CORS CORSConfig `envconfig:"CORS"`
+
+	// Rate limiting configuration
+	RateLimit RateLimitConfig `envconfig:"RATE_LIMIT"`
+
+	// Circuit breaker configuration
+	CircuitBreaker CircuitBreakerConfig `envconfig:"CIRCUIT_BREAKER"`
+
+	// Feature flags
+	Features FeatureConfig `envconfig:"FEATURES"`
+}
+
+// ServiceConfig holds service-specific configuration
+type ServiceConfig struct {
+	Name    string `envconfig:"SERVICE_NAME" default:"{{.CustomVariables.service_name | default "user"}}"`
+	Version string `envconfig:"SERVICE_VERSION" default:"1.0.0"`
+}
+
+// ServerConfig holds server configuration
+type ServerConfig struct {
+	GRPCPort       int           `envconfig:"GRPC_PORT" default:"{{.CustomVariables.grpc_port | default "9090"}}"`
+	HTTPPort       int           `envconfig:"HTTP_PORT" default:"{{.CustomVariables.http_port | default "8080"}}"`
+	MetricsPort    int           `envconfig:"METRICS_PORT" default:"{{.CustomVariables.metrics_port | default "2112"}}"`
+	ReadTimeout    time.Duration `envconfig:"READ_TIMEOUT" default:"15s"`
+	WriteTimeout   time.Duration `envconfig:"WRITE_TIMEOUT" default:"15s"`
+	IdleTimeout    time.Duration `envconfig:"IDLE_TIMEOUT" default:"60s"`
+	ShutdownTimeout time.Duration `envconfig:"SHUTDOWN_TIMEOUT" default:"30s"`
+}
+
+// DatabaseConfig holds database configuration
+type DatabaseConfig struct {
+	Driver          string        `envconfig:"DATABASE_DRIVER" default:"{{.CustomVariables.database_driver | default "postgres"}}"`
+	URL             string        `envconfig:"DATABASE_URL" required:"true"`
+	Host            string        `envconfig:"DATABASE_HOST" default:"localhost"`
+	Port            int           `envconfig:"DATABASE_PORT" default:"5432"`
+	Name            string        `envconfig:"DATABASE_NAME" default:"{{.ProjectName | lower}}_db"`
+	User            string        `envconfig:"DATABASE_USER" default:"{{.ProjectName | lower}}_user"`
+	Password        string        `envconfig:"DATABASE_PASSWORD" default:"{{.ProjectName | lower}}_password"`
+	SSLMode         string        `envconfig:"DATABASE_SSL_MODE" default:"disable"`
+	MaxOpenConns    int           `envconfig:"DATABASE_MAX_OPEN_CONNS" default:"25"`
+	MaxIdleConns    int           `envconfig:"DATABASE_MAX_IDLE_CONNS" default:"25"`
+	ConnMaxLifetime time.Duration `envconfig:"DATABASE_CONN_MAX_LIFETIME" default:"5m"`
+	ConnMaxIdleTime time.Duration `envconfig:"DATABASE_CONN_MAX_IDLE_TIME" default:"5m"`
+}
+
+// RedisConfig holds Redis configuration
+type RedisConfig struct {
+	URL          string        `envconfig:"REDIS_URL" default:"redis://localhost:6379/0"`
+	Host         string        `envconfig:"REDIS_HOST" default:"localhost"`
+	Port         int           `envconfig:"REDIS_PORT" default:"6379"`
+	Password     string        `envconfig:"REDIS_PASSWORD" default:""`
+	DB           int           `envconfig:"REDIS_DB" default:"0"`
+	MaxRetries   int           `envconfig:"REDIS_MAX_RETRIES" default:"3"`
+	PoolSize     int           `envconfig:"REDIS_POOL_SIZE" default:"10"`
+	MinIdleConns int           `envconfig:"REDIS_MIN_IDLE_CONNS" default:"5"`
+	DialTimeout  time.Duration `envconfig:"REDIS_DIAL_TIMEOUT" default:"5s"`
+	ReadTimeout  time.Duration `envconfig:"REDIS_READ_TIMEOUT" default:"3s"`
+	WriteTimeout time.Duration `envconfig:"REDIS_WRITE_TIMEOUT" default:"3s"`
+}
+
+// MessageBrokerConfig holds message broker configuration
+type MessageBrokerConfig struct {
+	Type string `envconfig:"MESSAGE_BROKER_TYPE" default:"{{.CustomVariables.message_broker | default "nats"}}"`
+
+	// NATS configuration
+	NATS NATSConfig `envconfig:"NATS"`
+
+	// Kafka configuration
+	Kafka KafkaConfig `envconfig:"KAFKA"`
+
+	// RabbitMQ configuration
+	RabbitMQ RabbitMQConfig `envconfig:"RABBITMQ"`
+}
+
+// NATSConfig holds NATS-specific configuration
+type NATSConfig struct {
+	URL            string        `envconfig:"NATS_URL" default:"nats://localhost:4222"`
+	Host           string        `envconfig:"NATS_HOST" default:"localhost"`
+	Port           int           `envconfig:"NATS_PORT" default:"4222"`
+	User           string        `envconfig:"NATS_USER" default:""`
+	Password       string        `envconfig:"NATS_PASSWORD" default:""`
+	ClusterID      string        `envconfig:"NATS_CLUSTER_ID" default:"{{.ProjectName | lower}}-cluster"`
+	MaxReconnects  int           `envconfig:"NATS_MAX_RECONNECTS" default:"5"`
+	ReconnectWait  time.Duration `envconfig:"NATS_RECONNECT_WAIT" default:"2s"`
+	Timeout        time.Duration `envconfig:"NATS_TIMEOUT" default:"2s"`
+}
+
+// KafkaConfig holds Kafka-specific configuration
+type KafkaConfig struct {
+	Brokers            []string      `envconfig:"KAFKA_BROKERS" default:"localhost:9092"`
+	ConsumerGroup      string        `envconfig:"KAFKA_CONSUMER_GROUP" default:"{{.ProjectName | lower}}-consumers"`
+	ClientID           string        `envconfig:"KAFKA_CLIENT_ID" default:"{{.ProjectName | lower}}-{{.CustomVariables.service_name | default "user"}}"`
+	Version            string        `envconfig:"KAFKA_VERSION" default:"2.8.0"`
+	SessionTimeout     time.Duration `envconfig:"KAFKA_SESSION_TIMEOUT" default:"10s"`
+	HeartbeatInterval  time.Duration `envconfig:"KAFKA_HEARTBEAT_INTERVAL" default:"3s"`
+	RebalanceTimeout   time.Duration `envconfig:"KAFKA_REBALANCE_TIMEOUT" default:"60s"`
+	RetryBackoff       time.Duration `envconfig:"KAFKA_RETRY_BACKOFF" default:"2s"`
+	RetryMax           int           `envconfig:"KAFKA_RETRY_MAX" default:"3"`
+}
+
+// RabbitMQConfig holds RabbitMQ-specific configuration
+type RabbitMQConfig struct {
+	URL               string        `envconfig:"RABBITMQ_URL" default:"amqp://guest:guest@localhost:5672/"`
+	Host              string        `envconfig:"RABBITMQ_HOST" default:"localhost"`
+	Port              int           `envconfig:"RABBITMQ_PORT" default:"5672"`
+	User              string        `envconfig:"RABBITMQ_USER" default:"guest"`
+	Password          string        `envconfig:"RABBITMQ_PASSWORD" default:"guest"`
+	VHost             string        `envconfig:"RABBITMQ_VHOST" default:"/"`
+	Exchange          string        `envconfig:"RABBITMQ_EXCHANGE" default:"{{.ProjectName | lower}}-exchange"`
+	Heartbeat         time.Duration `envconfig:"RABBITMQ_HEARTBEAT" default:"10s"`
+	ConnectionTimeout time.Duration `envconfig:"RABBITMQ_CONNECTION_TIMEOUT" default:"30s"`
+	ChannelMax        int           `envconfig:"RABBITMQ_CHANNEL_MAX" default:"0"`
+}
+
+// ObservabilityConfig holds observability configuration
+type ObservabilityConfig struct {
+	Logging LoggingConfig `envconfig:"LOGGING"`
+	Metrics MetricsConfig `envconfig:"METRICS"`
+	Tracing TracingConfig `envconfig:"TRACING"`
+}
+
+// LoggingConfig holds logging configuration
+type LoggingConfig struct {
+	Level  string `envconfig:"LOG_LEVEL" default:"info"`
+	Format string `envconfig:"LOG_FORMAT" default:"json"`
+	Output string `envconfig:"LOG_OUTPUT" default:"stdout"`
+}
+
+// MetricsConfig holds metrics configuration
+type MetricsConfig struct {
+	Enabled   bool   `envconfig:"METRICS_ENABLED" default:"true"`
+	Path      string `envconfig:"METRICS_PATH" default:"/metrics"`
+	Namespace string `envconfig:"PROMETHEUS_NAMESPACE" default:"{{.ProjectName | lower}}"`
+	Subsystem string `envconfig:"PROMETHEUS_SUBSYSTEM" default:"{{.CustomVariables.service_name | default "user"}}"`
+}
+
+// TracingConfig holds tracing configuration
+type TracingConfig struct {
+	Enabled        bool    `envconfig:"TRACING_ENABLED" default:"true"`
+	JaegerEndpoint string  `envconfig:"JAEGER_ENDPOINT" default:"http://localhost:14268/api/traces"`
+	ServiceName    string  `envconfig:"JAEGER_SERVICE_NAME" default:"{{.ProjectName | lower}}-{{.CustomVariables.service_name | default "user"}}"`
+	SamplerType    string  `envconfig:"JAEGER_SAMPLER_TYPE" default:"const"`
+	SampleRate     float64 `envconfig:"JAEGER_SAMPLER_PARAM" default:"1"`
+}
+
+// SecurityConfig holds security configuration
+type SecurityConfig struct {
+	JWTSecret    string        `envconfig:"JWT_SECRET" default:"your-super-secret-jwt-key-change-this-in-production"`
+	JWTExpiration time.Duration `envconfig:"JWT_EXPIRATION" default:"24h"`
+	TLS          TLSConfig     `envconfig:"TLS"`
+}
+
+// TLSConfig holds TLS configuration
+type TLSConfig struct {
+	Enabled  bool   `envconfig:"TLS_ENABLED" default:"false"`
+	CertFile string `envconfig:"TLS_CERT_FILE" default:"/etc/ssl/certs/server.crt"`
+	KeyFile  string `envconfig:"TLS_KEY_FILE" default:"/etc/ssl/private/server.key"`
+	CAFile   string `envconfig:"TLS_CA_FILE" default:"/etc/ssl/certs/ca.crt"`
+}
+
+// CORSConfig holds CORS configuration
+type CORSConfig struct {
+	Enabled        bool          `envconfig:"CORS_ENABLED" default:"true"`
+	AllowedOrigins []string      `envconfig:"CORS_ALLOWED_ORIGINS" default:"*"`
+	AllowedMethods []string      `envconfig:"CORS_ALLOWED_METHODS" default:"GET,POST,PUT,DELETE,OPTIONS"`
+	AllowedHeaders []string      `envconfig:"CORS_ALLOWED_HEADERS" default:"Content-Type,Authorization,X-Request-ID"`
+	MaxAge         time.Duration `envconfig:"CORS_MAX_AGE" default:"12h"`
+}
+
+// RateLimitConfig holds rate limiting configuration
+type RateLimitConfig struct {
+	Enabled            bool          `envconfig:"RATE_LIMIT_ENABLED" default:"true"`
+	RequestsPerMinute  int           `envconfig:"RATE_LIMIT_REQUESTS" default:"100"`
+	BurstSize          int           `envconfig:"RATE_LIMIT_BURST" default:"10"`
+	Window             time.Duration `envconfig:"RATE_LIMIT_WINDOW" default:"1m"`
+}
+
+// CircuitBreakerConfig holds circuit breaker configuration
+type CircuitBreakerConfig struct {
+	Enabled                  bool          `envconfig:"CIRCUIT_BREAKER_ENABLED" default:"true"`
+	MaxRequests              uint32        `envconfig:"CIRCUIT_BREAKER_MAX_REQUESTS" default:"10"`
+	Interval                 time.Duration `envconfig:"CIRCUIT_BREAKER_INTERVAL" default:"60s"`
+	Timeout                  time.Duration `envconfig:"CIRCUIT_BREAKER_TIMEOUT" default:"30s"`
+	MaxConsecutiveFailures   uint32        `envconfig:"CIRCUIT_BREAKER_MAX_CONSECUTIVE_FAILURES" default:"5"`
+}
+
+// FeatureConfig holds feature flag configuration
+type FeatureConfig struct {
+	NewAPIEnabled         bool `envconfig:"FEATURE_NEW_API_ENABLED" default:"false"`
+	ExperimentalCaching   bool `envconfig:"FEATURE_EXPERIMENTAL_CACHING" default:"false"`
+	EnhancedLogging       bool `envconfig:"FEATURE_ENHANCED_LOGGING" default:"true"`
+}
+
+// Load loads configuration from environment variables
+func Load() (*Config, error) {
+	var cfg Config
+
+	// Load configuration from environment variables
+	if err := envconfig.Process("", &cfg); err != nil {
+		return nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	// Post-process configuration
+	if err := cfg.validate(); err != nil {
+		return nil, fmt.Errorf("configuration validation failed: %w", err)
+	}
+
+	return &cfg, nil
+}
+
+// validate validates the configuration
+func (c *Config) validate() error {
+	// Validate database configuration
+	if c.Database.URL == "" {
+		return fmt.Errorf("DATABASE_URL is required")
+	}
+
+	// Validate server ports
+	if c.Server.GRPCPort <= 0 || c.Server.GRPCPort > 65535 {
+		return fmt.Errorf("invalid GRPC_PORT: %d", c.Server.GRPCPort)
+	}
+
+	if c.Server.HTTPPort <= 0 || c.Server.HTTPPort > 65535 {
+		return fmt.Errorf("invalid HTTP_PORT: %d", c.Server.HTTPPort)
+	}
+
+	if c.Server.MetricsPort <= 0 || c.Server.MetricsPort > 65535 {
+		return fmt.Errorf("invalid METRICS_PORT: %d", c.Server.MetricsPort)
+	}
+
+	// Validate log level
+	validLogLevels := []string{"debug", "info", "warn", "error", "fatal", "panic"}
+	if !contains(validLogLevels, c.Observability.Logging.Level) {
+		return fmt.Errorf("invalid LOG_LEVEL: %s", c.Observability.Logging.Level)
+	}
+
+	// Validate log format
+	validLogFormats := []string{"json", "text"}
+	if !contains(validLogFormats, c.Observability.Logging.Format) {
+		return fmt.Errorf("invalid LOG_FORMAT: %s", c.Observability.Logging.Format)
+	}
+
+	// Validate message broker type
+	validBrokerTypes := []string{"nats", "kafka", "rabbitmq"}
+	if !contains(validBrokerTypes, c.MessageBroker.Type) {
+		return fmt.Errorf("invalid MESSAGE_BROKER_TYPE: %s", c.MessageBroker.Type)
+	}
+
+	// Validate environment
+	validEnvironments := []string{"development", "staging", "production"}
+	if !contains(validEnvironments, c.Environment) {
+		return fmt.Errorf("invalid ENVIRONMENT: %s", c.Environment)
+	}
+
+	return nil
+}
+
+// IsDevelopment returns true if running in development environment
+func (c *Config) IsDevelopment() bool {
+	return c.Environment == "development"
+}
+
+// IsProduction returns true if running in production environment
+func (c *Config) IsProduction() bool {
+	return c.Environment == "production"
+}
+
+// IsStaging returns true if running in staging environment
+func (c *Config) IsStaging() bool {
+	return c.Environment == "staging"
+}
+
+// GetDatabaseURL constructs the database URL if not provided directly
+func (c *Config) GetDatabaseURL() string {
+	if c.Database.URL != "" {
+		return c.Database.URL
+	}
+
+	return fmt.Sprintf("%s://%s:%s@%s:%d/%s?sslmode=%s",
+		c.Database.Driver,
+		c.Database.User,
+		c.Database.Password,
+		c.Database.Host,
+		c.Database.Port,
+		c.Database.Name,
+		c.Database.SSLMode,
+	)
+}
+
+// GetRedisURL constructs the Redis URL if not provided directly
+func (c *Config) GetRedisURL() string {
+	if c.Redis.URL != "" {
+		return c.Redis.URL
+	}
+
+	if c.Redis.Password != "" {
+		return fmt.Sprintf("redis://:%s@%s:%d/%d",
+			c.Redis.Password,
+			c.Redis.Host,
+			c.Redis.Port,
+			c.Redis.DB,
+		)
+	}
+
+	return fmt.Sprintf("redis://%s:%d/%d",
+		c.Redis.Host,
+		c.Redis.Port,
+		c.Redis.DB,
+	)
+}
+
+// GetMessageBrokerURL returns the appropriate message broker URL
+func (c *Config) GetMessageBrokerURL() string {
+	switch c.MessageBroker.Type {
+	case "nats":
+		return c.MessageBroker.NATS.URL
+	case "kafka":
+		return strings.Join(c.MessageBroker.Kafka.Brokers, ",")
+	case "rabbitmq":
+		return c.MessageBroker.RabbitMQ.URL
+	default:
+		return ""
+	}
+}
+
+// contains checks if a slice contains a string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
+// GetEnvOrDefault returns environment variable value or default
+func GetEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+// GetEnvOrDefaultInt returns environment variable as int or default
+func GetEnvOrDefaultInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
+	}
+	return defaultValue
+}
+
+// GetEnvOrDefaultBool returns environment variable as bool or default
+func GetEnvOrDefaultBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
+		}
+	}
+	return defaultValue
+}
+
+// GetEnvOrDefaultDuration returns environment variable as duration or default
+func GetEnvOrDefaultDuration(key string, defaultValue time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if duration, err := time.ParseDuration(value); err == nil {
+			return duration
+		}
+	}
+	return defaultValue
+}
