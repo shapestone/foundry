@@ -126,6 +126,6 @@ type wireScaffolder struct {
 }
 
 func (s *wireScaffolder) WireHandler(ctx context.Context, spec *WireSpec) (*Result, error) {
-	// TODO: Implement wiring logic from existing routes/updater.go
+	// TODO: Implement wiring logic from existing routes/generator.go
 	return nil, fmt.Errorf("wiring not yet implemented")
 }
