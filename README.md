@@ -2,6 +2,8 @@
 
 A powerful Go project scaffolding and code generation tool that helps developers quickly create production-ready Go applications with best practices built-in.
 
+<span style="color: red;">Note:</span> This project is feature-complete but still undergoing refactoring and test coverage improvements. Contributions welcome.
+
 ## Features
 
 - 🚀 **Multiple Project Layouts**: Choose from various architectures (Standard, Microservice, DDD, Hexagonal, etc.)

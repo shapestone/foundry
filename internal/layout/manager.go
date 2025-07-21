@@ -43,35 +43,40 @@ func NewManager(configPath string) (*Manager, error) {
 
 // Replace the existing ListLayouts method in internal/layout/manager.go
 
-// ListLayouts returns all available layouts (embedded + registry)
+// In manager.go ListLayouts function, add debug:
 func (m *Manager) ListLayouts() []LayoutListEntry {
+	fmt.Printf("DEBUG: Manager.ListLayouts called\n")
 	var layouts []LayoutListEntry
 
 	// Add embedded layouts first (built-in templates)
+	fmt.Printf("DEBUG: Getting embedded layouts...\n")
 	embeddedLayouts := GetEmbeddedLayoutList()
+	fmt.Printf("DEBUG: Got %d embedded layouts\n", len(embeddedLayouts))
 	layouts = append(layouts, embeddedLayouts...)
 
 	// Add registry layouts (user/external templates)
+	fmt.Printf("DEBUG: Getting registry layouts...\n")
 	registryLayouts := m.registry.ListLayouts()
+	fmt.Printf("DEBUG: Got %d registry layouts\n", len(registryLayouts))
 	layouts = append(layouts, registryLayouts...)
 
+	fmt.Printf("DEBUG: Total layouts: %d\n", len(layouts))
 	return layouts
 }
 
 // Replace the GetLayout method in internal/layout/manager.go
 
-// GetLayout retrieves a specific layout (embedded first, then registry)
 func (m *Manager) GetLayout(ctx context.Context, name string) (*Layout, error) {
 	// Check embedded layouts first
 	embeddedLayouts := GetEmbeddedLayouts()
 	for _, layoutName := range embeddedLayouts {
 		if layoutName == name {
-			return m.loadEmbeddedLayout(name)
+			return m.loadEmbeddedLayout(name) // ✅ This works!
 		}
 	}
 
 	// Fall back to registry/loader
-	return m.loader.Load(ctx, name)
+	return m.loader.Load(ctx, name) // ❌ This uses filesystem
 }
 
 // loadEmbeddedLayout loads a layout from embedded templates

@@ -2,28 +2,20 @@ package commands
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
 
+	"github.com/shapestone/foundry/internal/layout"
 	"github.com/spf13/cobra"
 )
 
-// LayoutListEntry represents a layout in the list
-type LayoutListEntry struct {
-	Name        string
-	Version     string
-	Description string
-	Source      LayoutSource
-	Installed   bool
-}
-
-// LayoutSource represents a layout source
-type LayoutSource struct {
-	Type     string
-	Location string
-	Ref      string
-}
+// Type aliases to match layout package types
+type LayoutListEntry = layout.LayoutListEntry
+type LayoutSource = layout.LayoutSource
 
 // Layout represents a complete layout
 type Layout struct {
@@ -184,9 +176,29 @@ func runLayoutList(cmd *cobra.Command, args []string, adapter *CLIAdapter) error
 	showLocal, _ := cmd.Flags().GetBool("local")
 	showInstalled, _ := cmd.Flags().GetBool("installed")
 
-	// Get layouts (placeholder implementation)
-	layouts := getAvailableLayouts()
+	// Create layout manager to get real layouts (not placeholder)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+	configPath := filepath.Join(homeDir, ".foundry", "layouts.yaml")
 
+	manager, err := layout.NewManager(configPath)
+	if err != nil {
+		// If layout manager fails, fall back to placeholder for now
+		fmt.Fprintf(adapter.GetStderr(), "Warning: layout manager unavailable, using basic layouts: %v\n", err)
+		layouts := getAvailableLayouts()
+		return displayLayouts(stdout, layouts, showRemote, showLocal, showInstalled)
+	}
+
+	// Get layouts from manager (includes embedded + registry layouts)
+	layouts := manager.ListLayouts()
+
+	return displayLayouts(stdout, layouts, showRemote, showLocal, showInstalled)
+}
+
+// displayLayouts handles the filtering and display logic
+func displayLayouts(stdout io.Writer, layouts []LayoutListEntry, showRemote, showLocal, showInstalled bool) error {
 	// Filter layouts based on flags
 	var filtered []LayoutListEntry
 	for _, l := range layouts {
@@ -241,74 +253,58 @@ func runLayoutList(cmd *cobra.Command, args []string, adapter *CLIAdapter) error
 
 // runLayoutAdd executes the layout add command
 func runLayoutAdd(cmd *cobra.Command, args []string, adapter *CLIAdapter) error {
-	stdout := adapter.GetStdout()
+	stderr := adapter.GetStderr()
 	url := args[0]
 	customName, _ := cmd.Flags().GetString("name")
 	ref, _ := cmd.Flags().GetString("ref")
 
-	// Determine source type
-	var source LayoutSource
-	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
-		source = LayoutSource{
-			Type:     "remote",
-			Location: url,
-			Ref:      ref,
-		}
-	} else if strings.Contains(url, "github.com/") || strings.Count(url, "/") == 1 {
-		// Assume GitHub repository
-		repo := strings.TrimPrefix(url, "github.com/")
-		source = LayoutSource{
-			Type:     "github",
-			Location: repo,
-			Ref:      ref,
-		}
-		if ref == "" {
-			source.Ref = "main"
-		}
-	} else {
-		return fmt.Errorf("unsupported layout source: %s", url)
-	}
-
-	// Determine layout name
+	// Determine layout name for error message
 	name := customName
 	if name == "" {
-		// Extract name from URL
 		parts := strings.Split(url, "/")
 		name = parts[len(parts)-1]
 		name = strings.TrimSuffix(name, ".git")
-		name = strings.TrimSuffix(name, ".tar.gz")
-		name = strings.TrimSuffix(name, ".zip")
 	}
 
-	fmt.Fprintf(stdout, "Adding layout '%s' from %s...\n", name, url)
+	// Clear, honest communication about current status
+	fmt.Fprintf(stderr, "❌ Remote layout support is not yet implemented\n")
+	fmt.Fprintf(stderr, "\n")
+	fmt.Fprintf(stderr, "📋 What you tried:\n")
+	fmt.Fprintf(stderr, "  Layout: %s\n", name)
+	fmt.Fprintf(stderr, "  Source: %s\n", url)
+	if ref != "" {
+		fmt.Fprintf(stderr, "  Ref: %s\n", ref)
+	}
+	fmt.Fprintf(stderr, "\n")
+	fmt.Fprintf(stderr, "🔧 Current workarounds:\n")
+	fmt.Fprintf(stderr, "  1. Clone the repository manually:\n")
+	fmt.Fprintf(stderr, "     git clone %s\n", url)
+	fmt.Fprintf(stderr, "     # Then copy templates to your project\n")
+	fmt.Fprintf(stderr, "\n")
+	fmt.Fprintf(stderr, "  2. Use built-in layouts:\n")
+	fmt.Fprintf(stderr, "     foundry new myproject --list-layouts\n")
+	fmt.Fprintf(stderr, "\n")
+	fmt.Fprintf(stderr, "📅 This feature is planned for a future release\n")
 
-	// TODO: Actually fetch and validate the layout before adding
-	// For now, we'll add it to the registry and fetch on first use
-
-	fmt.Fprintf(stdout, "Successfully added layout '%s'\n", name)
-	fmt.Fprintln(stdout, "Run 'foundry layout update' to download the layout")
-	return nil
+	return fmt.Errorf("remote layout functionality not implemented")
 }
 
 // runLayoutUpdate executes the layout update command
 func runLayoutUpdate(cmd *cobra.Command, args []string, adapter *CLIAdapter) error {
-	stdout := adapter.GetStdout()
+	stderr := adapter.GetStderr()
 
 	if len(args) > 0 {
 		// Update specific layout
 		name := args[0]
-		fmt.Fprintf(stdout, "Updating layout '%s'...\n", name)
-
-		// TODO: Implement single layout update
+		fmt.Fprintf(stderr, "❌ Updating individual layouts is not yet implemented\n")
+		fmt.Fprintf(stderr, "Layout '%s' update skipped\n", name)
 		return fmt.Errorf("updating individual layouts not yet implemented")
 	}
 
-	// Update all remote registries
-	fmt.Fprintln(stdout, "Updating layout registry...")
-
-	// TODO: Implement registry update
-	fmt.Fprintln(stdout, "Layout registry updated successfully")
-	return nil
+	// Update all remote registries - also not implemented
+	fmt.Fprintf(stderr, "❌ Layout registry updates are not yet implemented\n")
+	fmt.Fprintf(stderr, "This feature will refresh remote layout sources when available\n")
+	return fmt.Errorf("layout registry updates not implemented")
 }
 
 // runLayoutRemove executes the layout remove command

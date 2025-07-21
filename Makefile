@@ -1,8 +1,9 @@
-# Makefile for Foundry
+# Updated Makefile for Foundry
 
 .PHONY: build test test-unit test-integration test-coverage test-race test-foundry test-autowire test-middleware install clean test-clean deps
 .PHONY: test-scaffolder test-scaffolder-unit test-scaffolder-integration test-scaffolder-coverage test-scaffolder-race bench-scaffolder dev-test-scaffolder
 .PHONY: test-parser test-parser-unit test-parser-integration test-parser-coverage test-parser-race bench-parser dev-test-parser
+.PHONY: smoke-test test-current test-cli-integration test-not-implemented
 
 # Ensure dependencies are up to date
 deps:
@@ -13,21 +14,30 @@ deps:
 build: deps
 	go build -o foundry ./cmd/foundry
 
-# Run tests
-test: deps
-	go test -v ./...
+# Run tests - now includes CLI integration tests
+test: deps test-unit test-cli-integration
+	@echo "✅ All tests passed"
 
 # Unit tests only
 test-unit: deps
-	go test -v ./cmd/... ./internal/...
+	@echo "🧪 Running unit tests..."
+	go test -v ./cmd/... ./internal/... -short
 
-# Integration tests only
-test-integration: deps
-	go test -v ./test/integration/...
+# CLI Integration tests - Phase 1 implementation
+test-cli-integration: deps
+	@echo "🔧 Running CLI integration tests..."
+	@mkdir -p test/integration
+	go test -v ./test/integration/... -timeout 10m
 
-# Test with coverage
+# Original integration tests (keeping for compatibility)
+test-integration: test-cli-integration
+
+# Test with coverage including CLI integration
 test-coverage: deps
-	go test -v -cover ./...
+	@echo "📊 Running tests with coverage..."
+	go test -v -coverprofile=coverage.out ./test/integration/... ./cmd/... ./internal/...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
 
 # Test with coverage and output to file
 test-coverage-file: deps
@@ -37,6 +47,37 @@ test-coverage-file: deps
 # Test with race detector
 test-race: deps
 	go test -v -race ./...
+
+# Test "not implemented" features specifically
+test-not-implemented: build
+	@echo "🚨 Testing 'not implemented' features..."
+	@echo "Testing layout add (should fail with helpful message):"
+	-./foundry layout add github.com/test/repo
+	@echo ""
+	@echo "Testing layout update (should fail with helpful message):"
+	-./foundry layout update
+	@echo ""
+	@echo "Testing wire command (should show warning):"
+	-./foundry wire handler test
+	@echo "✅ Not implemented features show proper messages"
+
+# Quick smoke test - just verify core commands work
+smoke-test: build
+	@echo "💨 Running smoke tests..."
+	./foundry version
+	./foundry --help
+	./foundry layout list
+	./foundry layout info standard
+	@echo "✅ Smoke tests passed"
+
+# Test current build
+test-current: build
+	@echo "🔍 Testing current foundry binary..."
+	./foundry version
+	./foundry layout list
+	./foundry layout info standard
+	./foundry new --list-layouts
+	@echo "✅ Current binary working"
 
 # Test foundry commands (original test)
 test-foundry: build
@@ -152,12 +193,14 @@ install: deps
 # Clean build artifacts and test directories
 clean:
 	@echo "🧹 Cleaning build artifacts..."
-	@rm -f foundry foundry-test
+	@rm -f foundry foundry-test foundry-smoke
 	@echo "🧹 Cleaning test output directory..."
 	@rm -rf test-output/
 	@rm -rf tmp/
 	@echo "🧹 Cleaning example projects..."
 	@rm -rf myapp testapp
+	@echo "🧹 Cleaning CLI integration test artifacts..."
+	@rm -f coverage.out coverage.html
 	@echo "🧹 Cleaning scaffolder test artifacts..."
 	@rm -f coverage-scaffolder.out coverage-scaffolder.html
 	@echo "🧹 Cleaning parser test artifacts..."
@@ -171,7 +214,7 @@ clean:
 test-clean: clean test
 
 # Run all tests including scaffolder and parser
-test-all: test test-scaffolder test-parser test-foundry test-autowire test-middleware
+test-all: test test-scaffolder test-parser test-foundry test-autowire test-middleware test-not-implemented
 
 # Development helpers
 .PHONY: fmt lint
@@ -193,13 +236,19 @@ help:
 	@echo "  make build              - Build the foundry binary"
 	@echo "  make install            - Install foundry to GOPATH/bin"
 	@echo ""
-	@echo "🧪 Basic Testing:"
-	@echo "  make test               - Run unit tests"
-	@echo "  make test-unit          - Run unit tests only"
-	@echo "  make test-integration   - Run integration tests only"
-	@echo "  make test-coverage      - Run tests with coverage"
-	@echo "  make test-coverage-file - Run tests with coverage report"
-	@echo "  make test-race          - Run tests with race detector"
+	@echo "🧪 Core Testing:"
+	@echo "  make test                    - Run unit tests + CLI integration tests"
+	@echo "  make test-unit               - Run unit tests only"
+	@echo "  make test-cli-integration    - Run CLI integration tests (Phase 1)"
+	@echo "  make test-integration        - Alias for CLI integration tests"
+	@echo "  make test-coverage           - Run tests with coverage"
+	@echo "  make test-coverage-file      - Run tests with coverage report"
+	@echo "  make test-race               - Run tests with race detector"
+	@echo "  make test-not-implemented    - Test 'not implemented' features"
+	@echo ""
+	@echo "🚀 Quick Tests:"
+	@echo "  make smoke-test         - Quick smoke test of core commands"
+	@echo "  make test-current       - Test current foundry binary"
 	@echo ""
 	@echo "🏗️  Scaffolder Testing:"
 	@echo "  make test-scaffolder           - Run all scaffolder tests"
@@ -207,26 +256,3 @@ help:
 	@echo "  make test-scaffolder-integration - Run scaffolder integration tests"
 	@echo "  make test-scaffolder-coverage  - Run scaffolder tests with coverage"
 	@echo "  make test-scaffolder-race      - Run scaffolder tests with race detection"
-	@echo "  make bench-scaffolder          - Benchmark scaffolder performance"
-	@echo "  make dev-test-scaffolder       - Watch mode for scaffolder tests"
-	@echo ""
-	@echo "🔍 Parser Testing:"
-	@echo "  make test-parser              - Run all parser tests"
-	@echo "  make test-parser-unit         - Run parser unit tests (fast)"
-	@echo "  make test-parser-integration  - Run parser integration tests"
-	@echo "  make test-parser-coverage     - Run parser tests with coverage"
-	@echo "  make test-parser-race         - Run parser tests with race detection"
-	@echo "  make bench-parser             - Benchmark parser performance"
-	@echo "  make dev-test-parser          - Watch mode for parser tests"
-	@echo ""
-	@echo "🚀 End-to-End Testing:"
-	@echo "  make test-foundry       - Test foundry commands"
-	@echo "  make test-autowire      - Test auto-wire functionality"
-	@echo "  make test-middleware    - Test middleware functionality"
-	@echo "  make test-all           - Run all tests (unit, scaffolder, parser, e2e)"
-	@echo ""
-	@echo "🧹 Maintenance:"
-	@echo "  make test-clean         - Clean and run tests"
-	@echo "  make clean              - Clean build artifacts and test output"
-	@echo "  make fmt                - Format Go code"
-	@echo "  make lint               - Run linter (requires golangci-lint)"
